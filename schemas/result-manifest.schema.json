@@ -150,7 +150,7 @@
           },
           "storage_ref": {
             "type": "string",
-            "description": "D1 content record reference or Google Drive file ID."
+            "description": "D1 content record ID or Google Drive file ID."
           }
         }
       }
