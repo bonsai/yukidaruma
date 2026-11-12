@@ -12,12 +12,26 @@ Snowflake-inspired **personal compute workspace**: register data, submit Python 
 
 D1 is suitable for metadata and small text datasets; Google Drive is the file store for larger datasets and artifacts. The selected storage backend is explicit in each dataset/artifact reference.
 
+## POC (now)
+
+Local vertical slice only — **csv → py → svg**. No queue, no D1, no Drive.
+
+```bash
+cd poc
+python job.py -i sample.csv -o out.csv -s summary.json
+# open poc/index.html in a browser and load out.csv
+```
+
+See [poc/README.md](poc/README.md).
+
 ## Docs
 
 | Doc | Purpose |
 |-----|---------|
 | [MRD](docs/MRD.md) | product context |
 | [PRD](docs/PRD.md) | requirements and constraints |
+| [Growth stages](docs/growth-stages.md) | POC → MVP → MAX (出世魚) |
+| [Roadmap](docs/roadmap-poc-mvp-max.md) | exit gates and issue mapping |
 | [ADR-001](docs/adr/001-mvp-architecture.md) | accepted MVP architecture |
 | [Architecture diagrams](docs/architecture.puml) | PlantUML diagrams |
 | [Storage model](docs/storage.md) | D1 / Google Drive storage rules |
@@ -29,8 +43,10 @@ D1 is suitable for metadata and small text datasets; Google Drive is the file st
 
 ## Growth plan
 
-The product grows as one system: **POC → MVP → MAX**. See [the staged roadmap](docs/roadmap-poc-mvp-max.md) for scope, exit gates, acceptance criteria, and the mapping to Issues #1–#10.
+The product grows as one system: **POC → MVP → MAX**. See [growth stages](docs/growth-stages.md) and [the staged roadmap](docs/roadmap-poc-mvp-max.md).
 
 ## Current status
 
-Architecture and contracts are documented. The next milestone is the POC vertical slice: one deterministic Python job, one Muse VM worker, D1 metadata/small text, and a private Google Drive artifact. Kaggle/Colab remain best-effort until verified.
+- Phase 0 contracts and ADR are in place.
+- **POC** (`poc/`) is the runnable csv-py-svg slice.
+- Next: MVP control plane (Workers + D1 + Muse Python poller) while keeping `poc/job.py` as the default task.

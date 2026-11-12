@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yukidaruma POC — csv → py → svg</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #121a2b;
+    --border: #243049;
+    --text: #e8eef9;
+    --muted: #8b9bb8;
+    --accent: #5b9fff;
+    --bar: #3d8bfd;
+    --bar-hi: #7eb6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.45;
+  }
+  header {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 28px 20px 8px;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 650; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 12px 20px 40px;
+    display: grid;
+    gap: 14px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  label { font-size: 13px; color: var(--muted); }
+  input[type="file"] {
+    color: var(--text);
+    font-size: 13px;
+  }
+  button {
+    background: var(--accent);
+    color: #041018;
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-weight: 650;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.05); }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #chart {
+    width: 100%;
+    height: 280px;
+    display: block;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .err { color: #ff8e8e; font-size: 13px; }
+  .meta { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Yukidaruma POC</h1>
+  <p>csv → py → svg &nbsp;·&nbsp; no framework · no queue · local only</p>
+</header>
+<main>
+  <section class="panel">
+    <div class="row">
+      <label for="file">CSV を選択（job.py の out.csv か sample）</label>
+      <input id="file" type="file" accept=".csv,text/csv">
+      <button type="button" class="secondary" id="loadSample">sample 相当を試す</button>
+    </div>
+    <p class="hint">
+      手順: <code>cd poc && python job.py -i sample.csv -o out.csv -s summary.json</code>
+      → このページで <code>out.csv</code> を開く
+    </p>
+    <p id="status" class="meta"></p>
+    <p id="error" class="err" hidden></p>
+  </section>
+
+  <section class="panel">
+    <h2 style="margin:0 0 10px;font-size:14px;">Table</h2>
+    <div style="overflow:auto;">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 style="margin:0 0 10px;font-size:14px;">SVG — tokens by model</h2>
+    <svg id="chart" viewBox="0 0 800 280" role="img" aria-label="Bar chart of tokens by model"></svg>
+  </section>
+</main>
+
+<script>
+(function () {
+  const fileInput = document.getElementById("file");
+  const loadSampleBtn = document.getElementById("loadSample");
+  const thead = document.getElementById("thead");
+  const tbody = document.getElementById("tbody");
+  const chart = document.getElementById("chart");
+  const statusEl = document.getElementById("status");
+  const errorEl = document.getElementById("error");
+
+  // Sample aggregate (same shape as job.py output on sample.csv)
+  const DEMO = `model,count,tokens,cost_usd
+Claude,2,118,0.11
+GPT,3,183,0.17
+Gemini,2,104,0.07
+`;
+
+  function showError(msg) {
+    errorEl.hidden = !msg;
+    errorEl.textContent = msg || "";
+  }
+
+  function parseCsv(text) {
+    const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
+    if (lines.length < 2) throw new Error("CSV にヘッダと1行以上が必要です");
+    const headers = splitCsvLine(lines[0]);
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = splitCsvLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = cols[idx] ?? ""; });
+      rows.push(row);
+    }
+    return { headers, rows };
+  }
+
+  function splitCsvLine(line) {
+    // minimal CSV (no nested quotes needed for our POC data)
+    return line.split(",").map((s) => s.trim());
+  }
+
+  function renderTable(headers, rows) {
+    thead.innerHTML = "<tr>" + headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("") + "</tr>";
+    tbody.innerHTML = rows.map((r) => {
+      return "<tr>" + headers.map((h) => {
+        const v = r[h] ?? "";
+        const num = isFinite(Number(v)) && v !== "";
+        return `<td class="${num ? "num" : ""}">${escapeHtml(String(v))}</td>`;
+      }).join("") + "</tr>";
+    }).join("");
+  }
+
+  function renderChart(rows) {
+    const ns = "http://www.w3.org/2000/svg";
+    while (chart.firstChild) chart.removeChild(chart.firstChild);
+
+    const keyLabel = pickColumn(rows, ["model", "name", "label"]) || Object.keys(rows[0] || {})[0];
+    const keyValue = pickColumn(rows, ["tokens", "count", "value", "cost_usd"]) || Object.keys(rows[0] || {})[1];
+    if (!keyLabel || !keyValue) return;
+
+    const data = rows.map((r) => ({
+      label: String(r[keyLabel] ?? ""),
+      value: Number(r[keyValue]) || 0,
+    }));
+    const max = Math.max(...data.map((d) => d.value), 1);
+
+    const W = 800, H = 280;
+    const padL = 48, padR = 20, padT = 24, padB = 48;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const gap = 16;
+    const barW = Math.max(12, (plotW - gap * (data.length + 1)) / data.length);
+
+    // axes
+    const axis = document.createElementNS(ns, "line");
+    axis.setAttribute("x1", padL);
+    axis.setAttribute("y1", padT + plotH);
+    axis.setAttribute("x2", W - padR);
+    axis.setAttribute("y2", padT + plotH);
+    axis.setAttribute("stroke", "#334155");
+    axis.setAttribute("stroke-width", "1");
+    chart.appendChild(axis);
+
+    data.forEach((d, i) => {
+      const x = padL + gap + i * (barW + gap);
+      const h = (d.value / max) * plotH;
+      const y = padT + plotH - h;
+
+      const rect = document.createElementNS(ns, "rect");
+      rect.setAttribute("x", x);
+      rect.setAttribute("y", y);
+      rect.setAttribute("width", barW);
+      rect.setAttribute("height", h);
+      rect.setAttribute("rx", "6");
+      rect.setAttribute("fill", i % 2 ? "#7eb6ff" : "#3d8bfd");
+      chart.appendChild(rect);
+
+      const lab = document.createElementNS(ns, "text");
+      lab.setAttribute("x", x + barW / 2);
+      lab.setAttribute("y", padT + plotH + 20);
+      lab.setAttribute("text-anchor", "middle");
+      lab.setAttribute("fill", "#8b9bb8");
+      lab.setAttribute("font-size", "12");
+      lab.textContent = d.label;
+      chart.appendChild(lab);
+
+      const val = document.createElementNS(ns, "text");
+      val.setAttribute("x", x + barW / 2);
+      val.setAttribute("y", y - 6);
+      val.setAttribute("text-anchor", "middle");
+      val.setAttribute("fill", "#e8eef9");
+      val.setAttribute("font-size", "11");
+      val.textContent = String(d.value);
+      chart.appendChild(val);
+    });
+
+    const title = document.createElementNS(ns, "text");
+    title.setAttribute("x", padL);
+    title.setAttribute("y", 16);
+    title.setAttribute("fill", "#8b9bb8");
+    title.setAttribute("font-size", "11");
+    title.textContent = `${keyValue} by ${keyLabel}`;
+    chart.appendChild(title);
+  }
+
+  function pickColumn(rows, candidates) {
+    if (!rows.length) return null;
+    const keys = Object.keys(rows[0]);
+    for (const c of candidates) {
+      if (keys.includes(c)) return c;
+    }
+    return null;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[c]);
+  }
+
+  function loadText(text, sourceLabel) {
+    showError("");
+    try {
+      const { headers, rows } = parseCsv(text);
+      renderTable(headers, rows);
+      renderChart(rows);
+      statusEl.textContent = `${sourceLabel} · ${rows.length} rows · ${headers.join(", ")}`;
+    } catch (e) {
+      showError(e.message || String(e));
+      statusEl.textContent = "";
+    }
+  }
+
+  fileInput.addEventListener("change", () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => loadText(String(reader.result || ""), f.name);
+    reader.onerror = () => showError("ファイルを読めませんでした");
+    reader.readAsText(f);
+  });
+
+  loadSampleBtn.addEventListener("click", () => {
+    loadText(DEMO, "demo (job.py aggregate on sample.csv)");
+  });
+
+  // auto-show demo so the page is not empty on first open
+  loadText(DEMO, "demo (job.py aggregate on sample.csv)");
+})();
+</script>
+</body>
+</html>
