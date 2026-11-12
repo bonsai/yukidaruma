@@ -1,5 +1,5 @@
 -- Yukidaruma D1 control-plane schema
--- D1 is metadata only. Large datasets and artifacts live in R2.
+-- D1 stores metadata and bounded small text payloads. Larger files live in Google Drive.
 -- All timestamps are UTC ISO-8601 text.
 
 PRAGMA foreign_keys = ON;
@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS datasets (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
   description   TEXT,
+  storage_backend TEXT NOT NULL DEFAULT 'google_drive' CHECK (storage_backend IN ('d1', 'google_drive')),
+  storage_ref   TEXT NOT NULL,
+  storage_backend TEXT NOT NULL CHECK (storage_backend IN ('d1', 'google_drive')),
+  storage_ref   TEXT NOT NULL,
   uri           TEXT NOT NULL,
   format        TEXT NOT NULL CHECK (format IN ('parquet', 'csv', 'jsonl', 'json', 'notebook', 'tar.gz', 'zip')),
   size_bytes    INTEGER,
@@ -24,6 +28,15 @@ CREATE TABLE IF NOT EXISTS datasets (
 CREATE INDEX IF NOT EXISTS idx_datasets_name ON datasets(name);
 CREATE INDEX IF NOT EXISTS idx_datasets_format ON datasets(format);
 CREATE INDEX IF NOT EXISTS idx_datasets_archived ON datasets(archived_at);
+
+-- Small UTF-8 dataset payloads only. API enforces a configurable byte limit.
+CREATE TABLE IF NOT EXISTS dataset_contents (
+  dataset_id  TEXT PRIMARY KEY REFERENCES datasets(id) ON DELETE CASCADE,
+  content_text TEXT NOT NULL,
+  byte_length INTEGER NOT NULL CHECK (byte_length >= 0),
+  checksum TEXT,
+  updated_at TEXT NOT NULL
+);
 
 -- Job definitions (immutable intent + mutable state)
 CREATE TABLE IF NOT EXISTS jobs (
@@ -76,7 +89,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_job ON runs(job_id);
 CREATE INDEX IF NOT EXISTS idx_runs_runner ON runs(runner_id);
 CREATE INDEX IF NOT EXISTS idx_runs_state ON runs(state);
 
--- Output artifacts (references only; bytes in R2)
+-- Output artifact metadata; payload is in dataset_contents (small) or Google Drive (large).
 CREATE TABLE IF NOT EXISTS artifacts (
   id            TEXT PRIMARY KEY,
   run_id        TEXT NOT NULL REFERENCES runs(id),
@@ -94,7 +107,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
 -- Registered compute runners
 CREATE TABLE IF NOT EXISTS runners (
   id                  TEXT PRIMARY KEY,
-  type                TEXT NOT NULL CHECK (type IN ('muse_vm', 'colab', 'kaggle', 'local_duckdb', 'other')),
+  type                TEXT NOT NULL CHECK (type IN ('muse_vm', 'colab', 'kaggle')),
   status              TEXT NOT NULL CHECK (status IN ('online', 'offline', 'disabled', 'draining')),
   capabilities_json   TEXT,
   labels_json         TEXT,
