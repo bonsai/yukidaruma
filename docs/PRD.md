@@ -9,18 +9,18 @@
 
 Yukidaruma is a Snowflake-inspired analytics workspace with a lightweight control plane and pluggable compute runners. Humans and AI agents can register datasets, submit jobs, monitor runs, inspect logs, and browse results from one UI.
 
-The initial release prioritizes a dependable Ubuntu/Muse VM runner. Colab and Kaggle are optional adapters introduced after the core job protocol is proven.
+The initial release uses one portable Python job contract across Kaggle, Colab, and the Muse Ubuntu VM. Each environment runs Python; platform-specific launch and availability are adapter concerns.
 
 **Product promise:** one workspace for data, jobs, compute routing, and results — without requiring one monolithic execution engine.
 
 ## 2. Goals
 
 1. Browser UI for datasets, jobs, runs, SQL worksheets, and artifacts.
-2. Cloudflare D1 for metadata and job state.
-3. Cloudflare R2 for datasets and generated artifacts.
-4. Ubuntu Muse VM execution through a stable worker protocol.
-5. Runtime-neutral, versioned JSON job contract.
-6. Colab and Kaggle best-effort remote adapters.
+2. Cloudflare D1 for metadata, job state, and small text-based dataset payloads.
+3. Google Drive for larger dataset files and generated artifacts.
+4. Python execution in Kaggle, Colab, and the Muse Ubuntu VM.
+5. Versioned JSON job/result contracts shared across Python environments.
+6. A Python worker on Muse VM polls the API; no Go orchestrator.
 7. Human and AI-agent access through the same authenticated API.
 8. Reproducibility through recorded provenance.
 
@@ -108,14 +108,13 @@ Runner ID, type, capabilities, status, last heartbeat, labels, enable/disable, a
 
 | Component | Responsibility | Initial technology |
 |---|---|---|
-| Web UI | Workspace, editor, tables, charts, job views | Inspect existing repo stack; keep replaceable |
+| Web UI | Workspace, editor, tables, charts, job views | Vanilla JavaScript + SVG; no framework |
 | Edge API | Authenticated requests, validation, metadata access | Cloudflare Workers |
-| Metadata DB | Catalog, jobs, runs, runner registry, audit | Cloudflare D1 |
-| Object store | Datasets, code bundles, logs, outputs, manifests | Cloudflare R2 |
-| Orchestrator | Claiming, dispatch, heartbeat, retry, reconciliation | Go service on Ubuntu Muse VM |
-| Local runner | Python tasks and local analytics | Python + DuckDB/Polars |
-| Remote adapters | Colab/Kaggle dispatch and collection | Python initially |
-| Optional acceleration | File transforms and CPU-heavy utilities | Rust when justified |
+| Metadata / small data store | Catalog, jobs, runs, runner registry, small text payloads | Cloudflare D1 |
+| File store | Larger datasets, code bundles, logs, outputs, manifests | Google Drive |
+| Muse worker | Polling, claim, heartbeat, launch and result reporting | Python on Ubuntu Muse VM |
+| Compute environments | Python task execution | Kaggle / Colab / Muse VM Python |
+| Analytics | Local tabular analysis where available | Python libraries; DuckDB optional |
 
 ### Connectivity
 Prefer outbound polling:
@@ -131,9 +130,9 @@ Prefer outbound polling:
 3. Muse VM polls and claims an eligible job.
 4. Runner retrieves inputs using scoped access.
 5. Runner executes workload.
-6. Runner uploads logs, outputs, and result manifest to R2.
-7. Runner reports state transitions and artifact references.
-8. UI reads metadata from D1 and previews artifacts from R2.
+6. Runner stores small text payloads in D1 or uploads larger files to Google Drive.
+7. Runner reports state transitions and storage-qualified artifact references.
+8. UI reads metadata from D1 and previews/downloads from D1 or Google Drive.
 
 ### SQL boundary
 D1 is not the analytical SQL engine. D1 stores control-plane records. DuckDB is the initial local analytical engine and can read Parquet, CSV, and JSONL from local or downloaded object-store files. A future remote SQL engine can be added behind an adapter.
@@ -155,9 +154,9 @@ Acceptance:
 
 ### FR-02 Dataset catalog — P0
 - Create, read, update, and archive dataset metadata.
-- Store object URI, format, size, checksum, schema summary, and provenance.
-- Initially support CSV, JSONL, and Parquet metadata.
-- Keep dataset content in R2 or an external object store.
+- Store storage_backend (d1 or google_drive), storage_ref, format, size, checksum, schema summary, and provenance.
+- Initially support CSV, JSONL, JSON, and Parquet.
+- D1 may hold small text payloads within documented limits; larger files use Google Drive.
 
 Acceptance:
 - Dataset can be registered by URI.
@@ -201,8 +200,8 @@ Acceptance:
 
 ### FR-06 Run history and artifacts — P0
 - Store attempt, timestamps, duration, runner, code revision, parameters, environment summary, and output manifest.
-- Artifacts have stable IDs and object URIs.
-- UI previews text/logs and basic CSV/JSONL.
+- Artifacts have stable IDs and storage-qualified references (D1 row or Google Drive file ID).
+- UI previews text and basic CSV/JSONL from either supported backend.
 
 Acceptance:
 - Completed run can be reopened after refresh.
@@ -212,7 +211,7 @@ Acceptance:
 - Execute SQL against local DuckDB datasets.
 - Display tabular results and elapsed time.
 - Save worksheets and query history.
-- Export results to R2.
+- Export results to D1 for small text results or Google Drive for larger files.
 - Separate D1 administrative queries from analytical queries.
 
 Acceptance:
@@ -259,7 +258,7 @@ Illustrative version 1.0 payload:
       "input": [
         {
           "dataset_id": "ds_example",
-          "uri": "r2://datasets/example.parquet",
+          "uri": "gdrive://file-id-or-d1://dataset-row-id",
           "format": "parquet",
           "version": "v1"
         }
@@ -275,7 +274,8 @@ Illustrative version 1.0 payload:
         "timeout_seconds": 1800
       },
       "output": {
-        "prefix": "r2://artifacts/job-output/"
+        "backend": "google_drive",
+        "prefix": "gdrive://folder-id"
       }
     }
 
@@ -337,7 +337,8 @@ All endpoints require authentication and validation. Runner endpoints require ru
 ### Security
 - Never commit API keys, tokens, signed URLs, or passwords.
 - Store server secrets in Cloudflare secrets or VM secret storage.
-- Use least-privilege, short-lived object access.
+- Use least-privilege Google Drive OAuth scopes and never expose refresh/access tokens to browser code.
+- Keep D1 payloads bounded; store large files in Google Drive.
 - Restrict task types and resource limits.
 - Treat datasets, notebooks, and parameters as untrusted input.
 - Redact secrets from logs and errors.
@@ -371,14 +372,14 @@ Record request IDs, job IDs, run IDs, runner IDs, state changes, durations, and 
 ### Phase 0 — Contract and foundation
 - Define job and result manifest schemas.
 - Define D1 schema and state machine.
-- Define R2 key layout.
+- Define D1 vs Google Drive storage selection, references, and access flow.
 - Document runner protocol and threat model.
 
 Exit: example job validates; ownership/state rules are documented; no secrets in fixtures.
 
 ### Phase 1 — Local vertical slice
 - Cloudflare Worker API and D1 metadata.
-- R2 artifact storage.
+- D1 / Google Drive storage adapters.
 - Go VM poller/orchestrator.
 - Python local runner.
 - Minimal UI for submit, list, detail, logs, and artifacts.
@@ -414,7 +415,7 @@ Exit: at least one remote adapter passes a documented end-to-end test, or remain
 - [ ] D1 records job before API acknowledgement.
 - [ ] Muse VM claims one job without duplicate ownership.
 - [ ] Python runner executes a deterministic task.
-- [ ] Runner uploads logs and artifact to R2.
+- [ ] Runner writes small text outputs to D1 or uploads larger artifacts to Google Drive.
 - [ ] UI shows state, timestamps, logs, and artifact links.
 - [ ] Run records input references, code revision, parameters, and runtime.
 - [ ] VM restart does not lose queued jobs.
@@ -426,15 +427,24 @@ Exit: at least one remote adapter passes a documented end-to-end test, or remain
 1. Which frontend framework and UI foundation already exist in the repository?
 2. Should the first SQL worksheet run only DuckDB locally, or support remote DuckDB jobs too?
 3. What authentication source should browser users and agents use?
-4. Is R2 mandatory from the first vertical slice, or can development use local filesystem storage?
+4. Which datasets/results fit D1's bounded text-payload path, and which must use Google Drive?
 5. Which Colab/Kaggle workflow is acceptable: API-driven dispatch, notebook template/manual handoff, or both?
 6. Which task types are allowed first: predefined tasks only, or trusted Python bundles?
 
-## 17. Implementation guardrails
+## 17. Fixed implementation constraints
+
+- Storage choices are D1 or Google Drive only. R2 is out of scope.
+- Compute choices are Python environments on Kaggle, Colab, or Muse VM only.
+- UI implementation is Vanilla JavaScript + SVG only; no React, Vue, Svelte, or other frontend framework.
+- Muse VM runs a Python polling worker; do not introduce a Go orchestrator.
+- The API/control plane may use Cloudflare Workers, but all user workloads execute in the selected Python environment.
+
+## 18. Implementation guardrails
 
 - Inspect the existing repository before selecting or replacing its stack.
 - Treat this PRD as product behavior authority; record architecture decisions separately in ADRs.
-- Do not use D1 as an analytical warehouse.
+- Do not use D1 as an unlimited bulk-file store; use Google Drive for larger files.
 - Do not promise unattended Colab/Kaggle execution before an end-to-end test.
+- Never add R2, Go orchestration, or a UI framework without an explicit change to these constraints.
 - Build one complete local execution path before adding languages or remote runners.
 - Add schema migrations and contract tests before expanding the UI.
