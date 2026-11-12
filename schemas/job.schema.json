@@ -49,7 +49,7 @@
             "colab",
             "kaggle"
           ],
-          "description": "Preferred execution target. 'auto' lets the orchestrator choose."
+          "description": "Python execution target. auto selects among the configured Python environments."
         },
         "language": {
           "type": "string",
@@ -153,6 +153,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "backend",
         "prefix"
       ],
       "properties": {
