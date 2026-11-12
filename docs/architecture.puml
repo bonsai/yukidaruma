@@ -1,196 +1,147 @@
-' Yukidaruma — system architecture
-' Source of truth: docs/PRD.md
-' Render with PlantUML (each @startuml block is an independent diagram).
+' Yukidaruma — constrained architecture
+' Storage: D1 or Google Drive | Compute: Python on Kaggle/Colab/Muse VM
+' UI: Vanilla JavaScript + SVG only
 
 @startuml yukidaruma_components
-title Yukidaruma — Control Plane and Compute Runners
+title Yukidaruma — Components
 left to right direction
 skinparam componentStyle rectangle
-skinparam packageStyle rectangle
 
-actor "Human user" as User
-actor "AI agent" as Agent
+actor "Human / AI agent" as User
+component "Browser UI\nVanilla JS + SVG" as UI
+component "Cloudflare Workers\nControl-plane API" as API
+database "Cloudflare D1\nCatalog / jobs / runs / events\nSmall text payloads" as D1
+cloud "Google Drive\nLarger datasets / code / artifacts" as Drive
 
-package "Client layer" {
-  [Snowflake-inspired Web UI] as UI
-  [Agent / CLI client] as Client
-}
-package "Cloudflare edge — Control Plane" {
-  [Workers API
-Auth + validation + routing] as API
-  database "D1
-Metadata + job state" as D1
-  folder "R2
-Datasets + bundles + artifacts" as R2
-}
-package "Compute plane" {
-  node "Ubuntu Muse VM" as VM {
-    [Go Orchestrator
-Poll / claim / heartbeat / reconcile] as Orch
-    [Python Runner
-Task execution] as Runner
-    [DuckDB / Polars
-Local analytics] as Engine
+package "Python compute environments" {
+  node "Muse Ubuntu VM" as Muse {
+    component "Python polling worker" as Worker
+    component "Python task process" as PyTask
   }
-  cloud "Colab adapter" as Colab
-  cloud "Kaggle adapter" as Kaggle
-  component "Future runner adapters" as Future
+  cloud "Kaggle Python" as Kaggle
+  cloud "Colab Python" as Colab
 }
-cloud "External object stores
-(optional)" as External
 
 User --> UI
-Agent --> Client
-UI --> API : HTTPS + authenticated API
-Client --> API : HTTPS + authenticated API
-API --> D1 : metadata / transactions
-API --> R2 : object metadata / scoped access
-Orch --> API : outbound HTTPS polling
-claim + heartbeat + events
-Runner --> R2 : fetch inputs / upload outputs
-Runner --> Orch : local process result
-Orch --> D1 : via API only
-Runner --> Engine : execute SQL / analytics
-API --> Colab : adapter dispatch
-best-effort / manual fallback
-API --> Kaggle : adapter dispatch
-best-effort / manual fallback
-API --> Future
-Runner --> External : optional input/output
-note bottom of VM
-  No inbound VM port required for MVP.
-  The VM initiates outbound connections.
-end note
+UI --> API : HTTPS / authenticated JSON
+API --> D1 : metadata + bounded text
+API --> Drive : server-side Drive API / file IDs
+Worker --> API : outbound poll / claim / heartbeat / result
+Worker --> PyTask : launch Python task
+PyTask --> D1 : small text result via API
+PyTask --> Drive : larger files via scoped API access
+Kaggle --> API : job status / result
+Kaggle --> Drive : input / output files
+Colab --> API : job status / result
+Colab --> Drive : input / output files
+
 note bottom of D1
-  Control-plane metadata only.
-  Never use D1 as the bulk analytical warehouse.
+  D1 is not an unlimited blob store
+  and is not the analytical query engine.
+end note
+note bottom of Drive
+  Private files only.
+  Keep OAuth tokens server-side.
+end note
+note bottom of Muse
+  Outbound HTTPS only.
+  No Go orchestrator or inbound listener.
 end note
 @enduml
 
 @startuml yukidaruma_job_sequence
-title Yukidaruma — Local job execution sequence
+title Yukidaruma — Python job lifecycle
 autonumber
 actor User
-participant "Web UI / Agent" as Client
+participant "Vanilla JS + SVG UI" as UI
 participant "Workers API" as API
 database "D1" as D1
-participant "R2" as R2
-participant "Go Orchestrator
-(Muse VM)" as Orch
-participant "Python Runner" as Runner
-participant "DuckDB / Polars" as Engine
+participant "Google Drive" as Drive
+participant "Python worker / runner" as Worker
+participant "Python environment\nMuse / Kaggle / Colab" as Py
 
-User -> Client : Submit job + inputs + constraints
-Client -> API : POST /v1/jobs
-API -> API : Authenticate + validate schema,
-permissions and resource limits
-API -> D1 : Persist job(state=queued)
+User -> UI : Submit Python job
+UI -> API : POST /v1/jobs
+API -> API : Authenticate + validate contract
+API -> D1 : Persist queued job
 D1 --> API : job_id
-API --> Client : 202 Accepted + job_id
-
-loop Poll interval
-  Orch -> API : POST /v1/runners/claim
-  API -> D1 : Atomically claim eligible job
-  D1 --> API : job + attempt
-  API --> Orch : Claimed job or no work
-end
-
-Orch -> API : POST heartbeat / dispatched
-API -> D1 : Update run + append event
-Orch -> Runner : Start allowed task
-Runner -> R2 : Download input objects / code bundle
-R2 --> Runner : Input files
-Runner -> Engine : Execute analysis
-Engine --> Runner : Results
-Runner -> R2 : Upload logs + outputs + manifest
-R2 --> Runner : Object references
-Runner -> Orch : Exit status + manifest
-Orch -> API : POST run events / complete
-API -> D1 : Persist terminal state + artifacts metadata
-API --> Orch : Acknowledged
-Client -> API : GET job / runs / artifacts
-API -> D1 : Read metadata and event history
-D1 --> API : Job, run and artifact records
-API --> Client : Status + artifact references
-Client -> R2 : Fetch preview / download (scoped URL)
-R2 --> Client : Result data
+API --> UI : 202 + job_id
+Worker -> API : Poll / claim (outbound HTTPS)
+API -> D1 : Atomic claim + create run
+D1 --> API : job + attempt
+API --> Worker : Job contract + storage references
+Worker -> Drive : Fetch large inputs if required
+Drive --> Worker : Input files
+Worker -> Py : Execute Python workload
+Py --> Worker : Result / logs
+Worker -> D1 : Persist bounded text output
+Worker -> Drive : Upload large files and artifacts
+Worker -> API : POST events + completion manifest
+API -> D1 : Update run, artifacts, state
+UI -> API : GET job / run / artifacts
+API --> UI : State + storage references
+UI -> API : Read/download via authenticated endpoint
+API -> D1 : Read small text or metadata
+API -> Drive : Fetch requested Drive file
+API --> UI : Preview / download
 @enduml
 
 @startuml yukidaruma_job_state
-title Yukidaruma — Job and run lifecycle
-hide empty description
-[*] --> queued : submit validated job
-
-queued --> claimed : runner claims attempt
-claimed --> dispatched : runner accepts workload
-dispatched --> running : process starts
-running --> succeeded : exit=0 + manifest committed
+title Yukidaruma — Job and run states
+[*] --> queued
+queued --> claimed : Python worker claims
+claimed --> dispatched : target accepted
+dispatched --> running : Python process starts
+running --> succeeded : manifest persisted
 running --> failed : execution error
 running --> timed_out : deadline exceeded
 queued --> cancelled : cancel before claim
-claimed --> cancel_requested : cancel request
-dispatched --> cancel_requested : cancel request
-running --> cancel_requested : cancel request
-cancel_requested --> cancelled : runner confirms stop
-cancel_requested --> timed_out : stop deadline exceeded
-claimed --> failed : dispatch/lease failure
-dispatched --> failed : startup failure
-
+claimed --> cancel_requested : cancellation
+dispatched --> cancel_requested
+running --> cancel_requested
+cancel_requested --> cancelled : worker confirms stop
 succeeded --> [*]
 failed --> [*]
 cancelled --> [*]
 timed_out --> [*]
-
 note right of claimed
-  A single runner owns one attempt.
-  Lease expiry is reconciled by the control plane.
-end note
-note right of failed
-  Retry creates a new run attempt;
-  it does not rewind a terminal run.
+  Exactly one active worker owns an attempt.
+  Claim is atomic in D1.
 end note
 @enduml
 
 @startuml yukidaruma_deployment
-title Yukidaruma — Deployment and trust boundaries
-skinparam componentStyle rectangle
-
-cloud "Public internet" {
-  node "User browser / agent" as Client
-  cloud "Cloudflare account" {
-    node "Workers" as Workers
-    database "D1" as D1
-    folder "R2" as R2
-  }
+title Yukidaruma — Deployment boundaries
+cloud "Browser" as Browser
+cloud "Cloudflare" {
+  node "Workers API" as Workers
+  database "D1" as D1
 }
-node "Private Ubuntu VM
-Muse environment" as VM {
-  component "Go Orchestrator" as Go
-  component "Python Runner" as Py
-  component "DuckDB" as Duck
+cloud "Google account" {
+  folder "Google Drive" as Drive
 }
-cloud "Optional remote compute" {
-  node "Colab" as Colab
-  node "Kaggle" as Kaggle
+node "Muse Ubuntu VM" {
+  component "Python polling worker" as MuseWorker
+  component "Python task env" as MusePy
 }
-
-Client --> Workers : HTTPS / authenticated
-Workers --> D1 : private binding
-Workers --> R2 : private binding / scoped URLs
-Go --> Workers : outbound HTTPS only
-Py --> R2 : scoped object access
-Py --> Duck
-Workers ..> Colab : optional adapter
-Workers ..> Kaggle : optional adapter
-
-note bottom of Workers
-  Validate every request.
-  Keep secrets in platform secret stores.
-  Audit actor, job, run and state transitions.
+cloud "Kaggle Python" as Kaggle
+cloud "Colab Python" as Colab
+Browser --> Workers : HTTPS
+Workers --> D1 : binding
+Workers --> Drive : OAuth / Drive API
+MuseWorker --> Workers : outbound HTTPS only
+MuseWorker --> MusePy : local process
+Kaggle --> Workers : API / manual handoff
+Colab --> Workers : API / manual handoff
+Kaggle --> Drive : file access
+Colab --> Drive : file access
+MusePy --> Drive : scoped file access
+note bottom of Browser
+  Vanilla JavaScript + SVG.
+  No frontend framework.
 end note
-note bottom of VM
-  Do not expose inbound listener in MVP.
-  Restrict task types, CPU/memory and timeout.
-  Treat datasets and code bundles as untrusted.
+note bottom of Drive
+  D1 or Drive only.
+  No R2.
 end note
 @enduml
