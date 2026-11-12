@@ -1,120 +1,105 @@
 # Workers API specification (MVP)
 
-Related: #5, PRD §11, `docs/runner-protocol.md`, `docs/storage-layout.md`
+Related: #5, PRD §11, docs/runner-protocol.md, docs/storage.md
 
-Base path: `/v1`  
-Auth: `Authorization: Bearer <token>`  
-User tokens vs runner tokens are distinct scopes.
+Base path: /v1  
+Auth: Authorization: Bearer <token>  
+User tokens and runner tokens have distinct scopes.
 
-All timestamps UTC ISO-8601. IDs opaque strings.
+All timestamps are UTC ISO-8601. IDs are opaque strings.
 
-**Storage:** dataset/artifact bytes live on **Google Drive**; D1 holds metadata and references (`drive_file_id` / `drive://file/{id}`).
+## Storage contract
+
+Only two storage backends are supported:
+- d1: small UTF-8 text payloads stored in dataset_contents; API enforces a configurable byte limit.
+- google_drive: larger files stored in Google Drive; D1 stores the file ID and metadata.
+
+Canonical references are d1://{dataset_or_artifact_id} and gdrive://{drive_file_id}. Do not use R2, public share URLs, or browser-visible OAuth credentials.
 
 ## Conventions
 
-- JSON request/response
-- Errors: `{ "error": { "code": "...", "message": "...", "details": {} } }`
-- Pagination: `?cursor=&limit=` (limit default 50, max 200)
-- Idempotency: `Idempotency-Key` header or body `idempotency_key` on `POST /jobs`
+- JSON request/response.
+- Structured errors: error.code, error.message, error.details.
+- Pagination: ?cursor=&limit= (default 50, maximum 200).
+- Idempotency: Idempotency-Key header or body idempotency_key on POST /jobs.
 
 ## Datasets
 
 | Method | Path | Scope | Description |
-|--------|------|-------|-------------|
-| POST | `/datasets` | user | Register dataset metadata |
-| GET | `/datasets` | user | List (exclude archived by default) |
-| GET | `/datasets/{id}` | user | Detail |
-| PATCH | `/datasets/{id}` | user | Update metadata |
-| POST | `/datasets/{id}/archive` | user | Soft-archive |
+|---|---|---|---|
+| POST | /datasets | user | Register dataset metadata and storage reference |
+| GET | /datasets | user | List datasets |
+| GET | /datasets/{id} | user | Detail |
+| PATCH | /datasets/{id} | user | Update metadata |
+| POST | /datasets/{id}/archive | user | Soft archive |
+| GET | /datasets/{id}/content | user | Read bounded D1 text content or stream/download Drive file |
 
-### POST /datasets body
+Example metadata:
 
-```json
-{
-  "name": "usage_logs",
-  "description": "optional",
-  "uri": "drive://file/1abc…",
-  "drive_file_id": "1abc…",
-  "format": "parquet",
-  "size_bytes": 12345,
-  "checksum": "sha256:…",
-  "schema_json": { },
-  "tags": ["prod"]
-}
-```
+    {
+      "name": "usage_logs",
+      "storage_backend": "google_drive",
+      "storage_ref": "gdrive://1abc...",
+      "format": "parquet",
+      "size_bytes": 12345,
+      "checksum": "sha256:..."
+    }
+
+For D1 inline text, register storage_backend=d1 and write UTF-8 content through the content endpoint. The API must reject payloads above the configured limit.
 
 ## Jobs
 
 | Method | Path | Scope | Description |
-|--------|------|-------|-------------|
-| POST | `/jobs` | user | Submit job (body = job.schema.json) |
-| GET | `/jobs` | user | List |
-| GET | `/jobs/{id}` | user | Detail + latest run summary |
-| POST | `/jobs/{id}/cancel` | user | Request cancel |
-| POST | `/jobs/{id}/retry` | user | New attempt from same payload |
-| GET | `/jobs/{id}/events` | user | Event history |
+|---|---|---|---|
+| POST | /jobs | user | Submit job (job.schema.json) |
+| GET | /jobs | user | List |
+| GET | /jobs/{id} | user | Detail + latest run |
+| POST | /jobs/{id}/cancel | user | Request cancellation |
+| POST | /jobs/{id}/retry | user | Create a new attempt |
+| GET | /jobs/{id}/events | user | Event history |
 
-### POST /jobs
+POST /jobs validates schemas/job.schema.json and persists before returning 202. State starts as queued. Secrets are forbidden in payloads. runtime.target is auto, muse_vm, colab, or kaggle; runtime.language is python only.
 
-- Validate against `schemas/job.schema.json`
-- Persist **before** 201 response
-- State starts as `queued`
-- Reject secrets in payload (best-effort heuristics)
-- `runtime.target`: `muse_vm` | `colab` | `kaggle` | `auto`
-
-## Runs & artifacts
+## Runs and artifacts
 
 | Method | Path | Scope | Description |
-|--------|------|-------|-------------|
-| GET | `/runs/{id}` | user | Run detail |
-| GET | `/runs/{id}/artifacts` | user | Artifact list (Drive ids + names) |
-| POST | `/runs/{id}/events` | runner | Progress / state |
-| POST | `/runs/{id}/complete` | runner | Terminal + manifest |
+|---|---|---|---|
+| GET | /runs/{id} | user | Run detail |
+| GET | /runs/{id}/artifacts | user | Artifact metadata |
+| GET | /artifacts/{id}/content | user | Read small D1 artifact or download Drive file |
+| POST | /runs/{id}/events | runner | Progress / state |
+| POST | /runs/{id}/complete | runner | Terminal state + result manifest |
 
-### POST /runs/{id}/complete body
-
-Must validate against `schemas/result-manifest.schema.json` (or subset). Idempotent. Artifact URIs should be Drive-based.
+Completion validates schemas/result-manifest.schema.json and is idempotent. Each artifact declares storage_backend and storage_ref.
 
 ## Runners
 
 | Method | Path | Scope | Description |
-|--------|------|-------|-------------|
-| POST | `/runners/register` | runner | Register/update capabilities |
-| POST | `/runners/heartbeat` | runner | Liveness |
-| POST | `/runners/claim` | runner | Atomically claim next eligible job |
+|---|---|---|---|
+| POST | /runners/register | runner | Register/update Python environment capabilities |
+| POST | /runners/heartbeat | runner | Liveness |
+| POST | /runners/claim | runner | Atomically claim next eligible job |
 
-### POST /runners/claim
+Claim request:
 
-Request:
+    {
+      "runner_id": "muse-vm-1",
+      "max_jobs": 1,
+      "capabilities": {"language": ["python"], "targets": ["muse_vm"]}
+    }
 
-```json
-{
-  "runner_id": "muse-vm-1",
-  "max_jobs": 1,
-  "capabilities": { "language": ["python"], "targets": ["muse_vm"] }
-}
-```
+Response contains job, attempt, and only the storage references/permissions needed for that job; 204 means no work. Claim is atomic and creates one runs row per attempt.
 
-Response 200 with job + attempt + Drive input file ids / output folder id, or 204 if none.
-
-Claim must be atomic: one runner wins; creates `runs` row with `attempt`.
-
-## Auth scopes (MVP)
+## Auth scopes
 
 | Scope | Can |
-|-------|-----|
-| `user` | datasets, jobs (own/workspace), read runs |
-| `runner` | register, heartbeat, claim, run events, complete |
-| `admin` | (later) all runners, retention |
+|---|---|
+| user | datasets, jobs, read runs and artifacts |
+| runner | register, heartbeat, claim, run events, complete |
+| admin | later operational controls |
 
-Revoked tokens must fail subsequent calls.
+Revoked tokens fail subsequent calls. Google Drive tokens remain server-side. Browser receives application-scoped download responses, not OAuth refresh/access tokens.
 
-## UI note
+## UI constraint
 
-Browser client is **vanilla JS + SVG** consuming this API (no framework requirement).
-
-## Implementation notes
-
-- Prefer D1 batch/transaction for claim + job state update
-- Never return Drive service-account keys in JSON
-- Prefer file IDs over brittle share URLs
+The browser UI is implemented using Vanilla JavaScript and SVG only. No frontend framework or charting dependency is assumed.
