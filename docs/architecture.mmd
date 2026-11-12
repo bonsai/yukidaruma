@@ -1,0 +1,46 @@
+%% Yukidaruma architecture — Control Plane vs Compute Plane
+%% Render with any Mermaid-compatible viewer.
+
+flowchart TB
+  subgraph Clients
+    Browser["Browser / Snowflake-like UI"]
+    Agent["AI Agent / Muse"]
+  end
+
+  subgraph ControlPlane["Control Plane (Cloudflare)"]
+    Workers["Cloudflare Workers API"]
+    D1[("D1: Catalog / Jobs / Runs")]
+    R2[("R2: Datasets / Artifacts")]
+  end
+
+  subgraph Orchestrator["Orchestrator (Ubuntu @ Muse VM)"]
+    GoAPI["Go: Poll / Claim / Heartbeat"]
+    Queue["Job Queue / Scheduler"]
+  end
+
+  subgraph ComputePlane["Compute Plane"]
+    PyRunner["Python Runner\n(DuckDB / Polars)"]
+    Colab["Colab Adapter"]
+    Kaggle["Kaggle Adapter"]
+    RustCLI["Rust utilities (optional)"]
+  end
+
+  Browser --> Workers
+  Agent --> Workers
+  Workers --> D1
+  Workers --> R2
+
+  GoAPI -->|poll / claim / report| Workers
+  GoAPI --> Queue
+  Queue --> PyRunner
+  Queue --> Colab
+  Queue --> Kaggle
+  PyRunner -.-> RustCLI
+
+  PyRunner -->|upload artifacts| R2
+  Colab -->|upload artifacts| R2
+  Kaggle -->|upload artifacts| R2
+
+  PyRunner -->|state events| GoAPI
+  Colab -->|state events| GoAPI
+  Kaggle -->|state events| GoAPI
