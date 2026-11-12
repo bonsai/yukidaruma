@@ -1,114 +1,106 @@
-# Runner protocol, state machine, threat model
+# Python worker protocol, state machine, and threat model
 
-Related: #6, ADR-001, `schemas/job.schema.json`, `schemas/result-manifest.schema.json`
+Related: #6, ADR-001, schemas/job.schema.json, schemas/result-manifest.schema.json
 
 ## Roles
 
 | Role | Responsibility |
-|------|----------------|
-| **API (Workers)** | Accept jobs, validate, persist to D1, issue claim tokens / signed URLs |
-| **Orchestrator (Go on Muse VM)** | Poll, claim, start local runner, forward heartbeats, report terminal state |
-| **Runner** | Execute one attempt, upload artifacts + manifest, report success/failure |
+|---|---|
+| Workers API | Authenticate, validate, persist jobs in D1, issue job-scoped storage access |
+| Python worker (Muse VM) | Poll, claim, heartbeat, launch Python task, report events and completion |
+| Python execution environment | Execute one attempt on Muse VM, Kaggle, or Colab |
+| Storage adapter | Read/write bounded D1 text or Google Drive files |
 
-Remote adapters (Colab/Kaggle) implement the same logical steps behind an adapter interface.
+There is no Go orchestrator. All user workloads run in Python environments.
 
-## Job / run state machine
+## Job and run state machine
 
-### Job states
+    queued -> claimed -> dispatched -> running -> succeeded
+                                         |-> failed
+                                         |-> timed_out
+    queued -> cancelled
+    claimed/dispatched/running -> cancel_requested -> cancelled
 
-```
-queued → claimed → dispatched → running → succeeded
-                                    ↘ failed
-                                    ↘ timed_out
-queued → cancel_requested → cancelled
-running → cancel_requested → cancelled
-```
-
-Terminal: `succeeded`, `failed`, `cancelled`, `timed_out`.
-
-### Run states (per attempt)
-
-```
-claimed → dispatched → running → succeeded | failed | cancelled | timed_out
-```
+Terminal states are succeeded, failed, cancelled, and timed_out. A retry creates a new attempt; it does not reopen a terminal run.
 
 Rules:
+1. Exactly one runner owns an active attempt; claim is atomic in D1.
+2. Terminal -> running is forbidden.
+3. Cancellation is cooperative; force a terminal cancellation after the configured grace period.
+4. Stale heartbeat is reconciled by the API/worker lease policy, not by a separate Go service.
+5. Completion with the same manifest is idempotent.
 
-1. **Single owner**: exactly one `runner_id` per active attempt; claim is atomic in D1.
-2. **No resurrection**: terminal → running is forbidden.
-3. **Cancel**: `cancel_requested` is cooperative; runner should stop when observed; force `cancelled` after grace period.
-4. **Stale heartbeat**: if `heartbeat_at` older than threshold (default 120s), orchestrator marks attempt `timed_out` or `failed` with code `stale_heartbeat` and may requeue a new attempt per policy.
-5. **Idempotent complete**: `POST /v1/runs/{id}/complete` with the same manifest is safe to retry.
+## Muse VM polling loop
 
-## Poll / claim flow (Muse VM)
+    while true:
+        POST /v1/runners/heartbeat
+        POST /v1/runners/claim
+        if a job is returned:
+            validate job contract and Python target
+            resolve D1 or Google Drive inputs
+            execute the allowlisted Python task
+            store small text results in D1 or larger files in Google Drive
+            POST /v1/runs/{id}/events
+            POST /v1/runs/{id}/complete
+        else:
+            sleep(poll_interval)
 
-```
-loop:
-  POST /v1/runners/heartbeat
-  POST /v1/runners/claim  { capabilities, max_jobs }
-  if job:
-    transition → claimed/dispatched
-    fetch inputs (presigned)
-    execute
-    upload artifacts + manifest.json
-    POST /v1/runs/{id}/complete
-  else:
-    sleep(poll_interval)
-```
+The Muse worker uses outbound HTTPS only. No public inbound listener is required.
+
+## Remote Python environments
+
+Kaggle and Colab use the same logical contract:
+- validate target and environment capability;
+- hand off or dispatch only through a currently supported platform mechanism;
+- report manual/unavailable rather than pretending a job was dispatched;
+- collect outputs into Google Drive or bounded D1 text storage;
+- report the result manifest idempotently.
+
+Remote sessions and free compute are best-effort and may be interrupted.
 
 ## Heartbeat
 
-- Interval: 30s recommended
-- Stale threshold: 120s (configurable)
-- Payload: `runner_id`, `status`, optional load metrics
+- Recommended interval: 30 seconds.
+- Initial stale threshold: 120 seconds, configurable.
+- Payload: runner_id, status, Python version, supported targets, optional load metrics.
 
-## Error taxonomy (runner → API)
+## Error taxonomy
 
-| code | retryable | meaning |
-|------|-----------|--------|
-| `validation_error` | no | bad inputs / unsupported task |
-| `download_failed` | yes | could not fetch input |
-| `exec_failed` | depends | process non-zero exit |
-| `upload_failed` | yes | could not write artifacts |
-| `timeout` | yes | exceeded resources.timeout_seconds |
-| `cancelled` | no | cooperative cancel |
-| `stale_heartbeat` | yes | orchestrator intervention |
+| Code | Retryable | Meaning |
+|---|---|---|
+| validation_error | no | invalid contract or unsupported task |
+| storage_read_failed | yes | D1/Drive input could not be read |
+| exec_failed | depends | Python process returned non-zero |
+| storage_write_failed | yes | result could not be persisted |
+| timeout | yes | resources.timeout_seconds exceeded |
+| cancelled | no | cooperative cancellation |
+| stale_heartbeat | yes | worker lease expired |
 
-## Threat model (MVP)
+## Threat model
 
-### Assets
-
-- Dataset contents in R2
-- Job parameters (may contain sensitive business data)
-- API tokens / runner credentials
-- Execution environment on Muse VM
-
-### Threats and mitigations
+Assets:
+- D1 metadata and bounded text payloads
+- Google Drive files and OAuth credentials
+- job parameters and execution environments
+- user and runner API tokens
 
 | Threat | Mitigation |
-|--------|------------|
-| Stolen long-lived R2 keys | No static keys on runners; short-lived scoped creds |
-| Job payload secrets | Forbidden in contract; reject if detected patterns (best-effort) |
-| Untrusted code execution | MVP: trusted bundles / allowlisted tasks only |
-| Log leakage of secrets | Redact known secret patterns; never log presigned query strings in full |
-| Claim race / double run | Atomic claim in D1; unique (job_id, attempt) |
-| Runner impersonation | Runner-scoped tokens distinct from user tokens |
-| Supply-chain notebook from Colab | Remote path is P1; treat outputs as untrusted until reviewed |
+|---|---|
+| Google Drive token theft | OAuth tokens server-side, narrow scopes, rotation |
+| Publicly exposed data | Use private Drive files; file IDs are not authorization |
+| D1 oversized payload | API byte limit and format allowlist |
+| Job payload secrets | Forbid credentials in schemas and redact logs |
+| Untrusted Python code | Allowlisted task types/trusted bundles; isolate process and enforce limits |
+| Claim race | Atomic D1 claim and unique (job_id, attempt) |
+| Runner impersonation | Distinct runner-scoped tokens |
+| Remote notebook supply chain | Treat remote outputs as untrusted until validated |
 
-### Explicit non-goals for MVP
+## Adapter interface
 
-- Multi-tenant hard isolation (gVisor/Firecracker)
-- Formal compliance attestations
-- Guaranteed free GPU
+    validate(job) -> ok | error
+    submit(job) -> platform_ref | manual_required
+    status(platform_ref) -> state
+    cancel(platform_ref) -> ok | unsupported
+    collect(platform_ref) -> manifest
 
-## Adapter interface (logical)
-
-```
-validate(job) -> ok | error
-submit(job) -> platform_ref | manual_required
-status(platform_ref) -> state
-cancel(platform_ref) -> ok | unsupported
-collect(platform_ref) -> manifest  # idempotent
-```
-
-Until an adapter passes E2E, UI must show `unavailable` or `manual`, never `ready`.
+Until an adapter passes end-to-end tests, the UI shows manual or unavailable, never ready.
