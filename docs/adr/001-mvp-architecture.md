@@ -1,46 +1,59 @@
 # ADR-001 — MVP Architecture
 
-- Status: Accepted
+- Status: Accepted (revised 2026-11-13)
 - Date: 2026-11-12
-- Related issues: #1, #2, #3, #4, #5, #6
+- Revised: 2026-11-13
+- Related issues: #1, #2, #3, #4, #5, #6, #9
 
 ## Context
 
-Yukidaruma needs a Snowflake-inspired analytics workspace without reimplementing a warehouse engine. Humans and AI agents must submit jobs, track runs, and retrieve artifacts. Compute must be pluggable (Muse VM first; Colab/Kaggle later).
+Yukidaruma needs a Snowflake-inspired analytics workspace without reimplementing a warehouse engine. Humans and AI agents must submit jobs, track runs, and retrieve artifacts. Compute is limited to existing Python environments the operator already uses.
+
+## Hard constraints (product)
+
+| Area | Constraint |
+|------|------------|
+| **Storage** | **Cloudflare D1** (metadata / small structured state) and/or **Google Drive** (datasets, artifacts, logs). No R2 requirement for MVP. |
+| **Compute** | **Muse VM / Colab / Kaggle** Python environments only. No mandatory extra cluster. |
+| **UI** | **Vanilla JS + SVG only** (no React/Vue/Svelte requirement). |
 
 ## Decision
 
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
-| Edge API | Cloudflare Workers | Low ops, close to D1/R2, auth at edge |
-| Metadata DB | Cloudflare D1 | Control-plane only; SQLite-compatible |
-| Object store | Cloudflare R2 | Datasets + artifacts; no egress fee to Workers |
-| Orchestrator | Go on Ubuntu Muse VM | Long-running poller, claim, heartbeat |
-| Local runner | Python + DuckDB/Polars | Analysis standard; notebooks later |
-| Remote runners | Colab / Kaggle adapters (P1) | Best-effort only after local path works |
-| Optional accel | Rust CLI (P2) | Only for measured bottlenecks |
-| Connectivity | Outbound poll from VM | No inbound public port on Muse VM |
+| Edge API | Cloudflare Workers | Low ops, native D1 binding, auth at edge |
+| Metadata | Cloudflare D1 | Job/run/catalog control plane |
+| Blob / files | Google Drive (primary for large objects) | Fits constraint; shareable with Colab |
+| Small blobs / previews | D1 only when tiny (rows, JSON summaries) | Avoid D1 as warehouse |
+| Orchestrator | Muse VM (Python or thin Go/Python hybrid later) | Poll / claim / run local py env |
+| Compute runners | Muse VM py · Colab · Kaggle | Same job contract; best-effort remote |
+| Analytics in-process | DuckDB / Polars inside Python | Local SQL feel without a warehouse |
+| UI | Vanilla JS + SVG | Lightweight Snowsight-like sheets/charts |
+| Connectivity | Outbound poll from Muse VM | No inbound public port required |
 
 ## Consequences
 
 **Positive**
-- Clear control plane vs compute plane
-- VM restart does not lose queued jobs (state in D1)
-- Same job contract for humans and agents
+- Matches real operator tooling (Drive + Colab/Kaggle/VM)
+- UI stack stays trivial to host (static files + Workers)
+- Control plane stays on D1; files stay off-SQLite
 
 **Negative / constraints**
-- D1 is not an analytical engine (size + single-thread limits)
-- Free Colab/Kaggle are unreliable; must not block MVP
-- Two languages (Go + Python) to maintain for MVP
+- Drive API auth, quotas, and latency replace R2 presign simplicity
+- D1 size limits still forbid large analytical tables
+- Colab/Kaggle session limits remain best-effort
+- Vanilla JS means no heavy UI framework productivity for complex state
 
 ## Non-decisions (deferred)
 
-- Frontend framework (inspect repo when UI starts)
-- Auth provider details (token shape fixed in API spec; IdP later)
+- R2 as optional later backend behind the same URI scheme
+- Go orchestrator vs Python-first orchestrator on Muse VM
+- Auth IdP details beyond bearer tokens
 - Multi-tenant IAM, billing, compliance
 
 ## Alternatives considered
 
-1. **All-in on one language** — rejected; Python is required for analysis UX, Go fits long-running orchestrator.
+1. **R2 as primary object store** — deferred; conflicts with current storage constraint (D1 or Google Drive).
 2. **D1 as analytical store** — rejected; wrong scale and query model.
-3. **Inbound webhook to Muse VM** — deferred; poll is simpler and safer for MVP.
+3. **SPA framework for UI** — rejected for MVP; vanilla JS + SVG only.
+4. **Inbound webhook to Muse VM** — deferred; poll is simpler and safer.
