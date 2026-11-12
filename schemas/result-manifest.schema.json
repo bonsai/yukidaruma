@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bonsai/yukidaruma/blob/main/schemas/result-manifest.schema.json",
+  "title": "Yukidaruma Result Manifest",
+  "description": "Written by runners on completion. Stored in R2 next to artifacts; summary fields also mirrored on the run record in D1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "job_id", "run_id", "status", "artifacts", "finished_at"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "job_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "cancelled", "timed_out"]
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runner_id": { "type": "string" },
+        "type": { "type": "string" },
+        "hostname": { "type": "string" },
+        "environment": { "type": "object" }
+      }
+    },
+    "code_revision": { "type": "string" },
+    "metrics": {
+      "type": "object",
+      "description": "Optional numeric metrics (rows_processed, bytes_written, etc.)"
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "uri"],
+        "properties": {
+          "name": { "type": "string" },
+          "uri": { "type": "string" },
+          "format": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "checksum": { "type": "string" },
+          "content_type": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["log", "table", "chart", "notebook", "bundle", "other"],
+            "default": "other"
+          }
+        }
+      }
+    },
+    "preview": {
+      "type": "object",
+      "description": "Small inline preview only; never full datasets.",
+      "properties": {
+        "columns": { "type": "array", "items": { "type": "string" } },
+        "rows": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "type": "array" }
+        }
+      }
+    }
+  }
+}
