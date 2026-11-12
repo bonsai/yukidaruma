@@ -31,7 +31,7 @@ The initial release uses one portable Python job contract across Kaggle, Colab, 
 - Guarantee free GPU capacity or uninterrupted Colab/Kaggle sessions.
 - Execute arbitrary untrusted code without isolation and policy checks.
 - Build enterprise IAM, billing, compliance, or multi-tenant features in the MVP.
-- Require Rust for the first usable release.
+- Add non-Python workload runtimes to the first usable release.
 - Make remote notebook automation a prerequisite for MVP.
 - Support every SQL dialect or notebook format initially.
 
@@ -238,9 +238,9 @@ Acceptance:
 - A remote job is not marked dispatched before platform acceptance.
 - Result collection is idempotent.
 
-### FR-10 Rust utilities — P2
-- Add Rust only for measured bottlenecks or useful standalone transforms.
-- Invoke through CLI/file contracts without changing public job API.
+### FR-10 Python environment extensions — P2
+- Add Python packages or optional Python-native analytics tools only when a measured workload requires them.
+- Keep the public job contract and supported Python targets stable.
 
 ## 9. Job contract
 
@@ -424,7 +424,7 @@ Exit: at least one remote adapter passes a documented end-to-end test, or remain
 
 ## 16. Open decisions
 
-1. Which frontend framework and UI foundation already exist in the repository?
+1. Which Vanilla JavaScript module and SVG component conventions should the UI standardize on?
 2. Should the first SQL worksheet run only DuckDB locally, or support remote DuckDB jobs too?
 3. What authentication source should browser users and agents use?
 4. Which datasets/results fit D1's bounded text-payload path, and which must use Google Drive?
@@ -445,6 +445,6 @@ Exit: at least one remote adapter passes a documented end-to-end test, or remain
 - Treat this PRD as product behavior authority; record architecture decisions separately in ADRs.
 - Do not use D1 as an unlimited bulk-file store; use Google Drive for larger files.
 - Do not promise unattended Colab/Kaggle execution before an end-to-end test.
-- Never add R2, Go orchestration, or a UI framework without an explicit change to these constraints.
+- Never add R2, a non-Python workload runtime, or a UI framework without an explicit change to these constraints.
 - Build one complete local execution path before adding languages or remote runners.
 - Add schema migrations and contract tests before expanding the UI.
