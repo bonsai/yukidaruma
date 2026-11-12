@@ -11,10 +11,11 @@ Yukidaruma is a lightweight, Snowflake-inspired analytics workbench for personal
 Yukidaruma is not a cloud data warehouse and does not attempt to reproduce Snowflake's storage engine, SQL engine, governance suite, or enterprise workload management. It separates the control plane from compute:
 
 - Cloudflare D1 stores catalog metadata, job definitions, state transitions, and references.
-- Cloudflare R2 stores datasets, intermediate files, logs, and result artifacts.
-- An Ubuntu VM used by Muse provides orchestration and dependable local execution.
-- Colab and Kaggle are optional remote compute targets, subject to their APIs, quotas, session limits, and terms.
-- Python is the primary analytics runtime; Go provides orchestration/API services; Rust is an optional high-performance tool layer.
+- Cloudflare D1 stores metadata, job state, and deliberately small text-based data payloads.
+- Google Drive stores larger datasets, code bundles, logs, and result artifacts.
+- Kaggle, Colab, and the Muse Ubuntu VM provide Python execution environments.
+- A Python worker on Muse VM polls the control-plane API; there is no Go orchestration service.
+- The UI is restricted to Vanilla JavaScript + SVG.
 
 **Promise:** submit work once, run it where it makes sense, and keep its data, status, and results discoverable in one workspace.
 
@@ -74,8 +75,9 @@ Yukidaruma should integrate with these tools rather than replace them.
 ## 7. Product principles
 
 1. Metadata is not bulk data: D1 is the control-plane database, not the analytical warehouse.
-2. Large datasets and outputs live in R2 or another object store.
-3. Compute is replaceable: runners implement a common job contract.
+2. Storage is limited to D1 or Google Drive: D1 for metadata/small text payloads, Google Drive for larger files.
+3. Compute is replaceable across Kaggle, Colab, and Muse VM Python environments using one job contract.
+4. UI remains framework-free: Vanilla JavaScript + SVG only.
 4. Prefer pull-based connectivity: the Muse VM polls for work; inbound VM ports are not required.
 5. Colab and Kaggle are best-effort adapters, not guaranteed compute services.
 6. Build one dependable local runner before remote notebook automation.
@@ -113,7 +115,7 @@ MVP outcome: a user can register one dataset, submit a local Python job, inspect
 |---|---|---|
 | Colab/Kaggle quota or API changes | Remote jobs may not start or may be interrupted | Best-effort adapters, timeout, retry policy, manual handoff |
 | Muse VM unavailable | Dispatch pauses | Persist queued jobs in D1 and resume polling after reconnect |
-| D1 unsuitable for analytical scans | Performance and cost issues | Metadata only; DuckDB/Polars for data scans |
+| D1 unsuitable for large payloads or analytical scans | Size/performance limits | Keep D1 payloads small; use Google Drive for larger files and Python libraries for analysis |
 | Storage permissions misconfigured | Data exposure or failed runs | Scoped credentials, short-lived access, least privilege |
 | Runtime mismatch | Non-reproducible outputs | Capture environment, dependency lock, code revision, parameters |
 | Too many implementation languages | Maintenance burden | Start with Go and Python; add Rust only for measured bottlenecks |
@@ -122,3 +124,10 @@ MVP outcome: a user can register one dataset, submit a local Python job, inspect
 ## 11. Scope boundary
 
 This MRD establishes the market opportunity, target users, and product requirements. Detailed behavior, APIs, entities, acceptance criteria, and delivery phases are defined in PRD.md.
+
+## 12. Fixed technical constraints
+
+- Storage: Cloudflare D1 or Google Drive only; no R2.
+- Compute: Python environments on Kaggle, Colab, or Muse VM.
+- UI: Vanilla JavaScript + SVG only.
+- Muse VM orchestration is a Python polling worker, not a Go service.
