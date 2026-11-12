@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS datasets (
   description   TEXT,
   storage_backend TEXT NOT NULL DEFAULT 'google_drive' CHECK (storage_backend IN ('d1', 'google_drive')),
   storage_ref   TEXT NOT NULL,
-  uri           TEXT NOT NULL,
   format        TEXT NOT NULL CHECK (format IN ('parquet', 'csv', 'jsonl', 'json', 'notebook', 'tar.gz', 'zip')),
   size_bytes    INTEGER,
   checksum      TEXT,
@@ -87,14 +86,13 @@ CREATE INDEX IF NOT EXISTS idx_runs_job ON runs(job_id);
 CREATE INDEX IF NOT EXISTS idx_runs_runner ON runs(runner_id);
 CREATE INDEX IF NOT EXISTS idx_runs_state ON runs(state);
 
--- Output artifact metadata; payload is in dataset_contents (small) or Google Drive (large).
+-- Output artifact metadata; small text payloads live in artifact_contents, larger files in Google Drive.
 CREATE TABLE IF NOT EXISTS artifacts (
   id            TEXT PRIMARY KEY,
   run_id        TEXT NOT NULL REFERENCES runs(id),
   name          TEXT NOT NULL,
   storage_backend TEXT NOT NULL CHECK (storage_backend IN ('d1', 'google_drive')),
   storage_ref   TEXT NOT NULL,
-  uri           TEXT NOT NULL,
   format        TEXT,
   size_bytes    INTEGER,
   checksum      TEXT,
@@ -103,6 +101,15 @@ CREATE TABLE IF NOT EXISTS artifacts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
+
+-- Small UTF-8 artifact payloads only. API enforces the same configured byte limit.
+CREATE TABLE IF NOT EXISTS artifact_contents (
+  artifact_id TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
+  content_text TEXT NOT NULL,
+  byte_length INTEGER NOT NULL CHECK (byte_length >= 0),
+  checksum TEXT,
+  updated_at TEXT NOT NULL
+);
 
 -- Registered compute runners
 CREATE TABLE IF NOT EXISTS runners (
