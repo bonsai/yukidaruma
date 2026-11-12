@@ -19,7 +19,7 @@ Local vertical slice only — **csv → py → svg**. No queue, no D1, no Drive.
 ```bash
 cd poc
 python job.py -i sample.csv -o out.csv -s summary.json
-# open poc/index.html in a browser and load out.csv
+# open index.html in a browser and load out.csv
 ```
 
 See [poc/README.md](poc/README.md).
