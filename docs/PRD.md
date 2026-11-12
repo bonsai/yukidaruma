@@ -264,7 +264,7 @@ Illustrative version 1.0 payload:
         }
       ],
       "code": {
-        "source_uri": "r2://code-bundles/example.tar.gz",
+        "source_uri": "gdrive://file-id-or-d1://code-row-id",
         "revision": "git-sha-or-version"
       },
       "parameters": {},
@@ -284,7 +284,7 @@ Server-owned fields such as job_id, timestamps, state, and runner assignment mus
 ## 10. Core data entities
 
 ### datasets
-id, name, description, uri, format, size_bytes, checksum, schema_json, tags_json, source_json, created_at, updated_at, archived_at.
+id, name, description, storage_backend, storage_ref, format, size_bytes, checksum, schema_json, tags_json, source_json, created_at, updated_at, archived_at.
 
 ### jobs
 id, task, requested_runtime, language, payload_json, state, priority, submitted_by, idempotency_key, created_at, updated_at, cancel_requested_at.
@@ -293,7 +293,7 @@ id, task, requested_runtime, language, payload_json, state, priority, submitted_
 id, job_id, attempt, runner_id, state, started_at, finished_at, heartbeat_at, duration_ms, code_revision, environment_json, error_code, error_message.
 
 ### artifacts
-id, run_id, name, uri, format, size_bytes, checksum, content_type, created_at.
+id, run_id, name, storage_backend, storage_ref, format, size_bytes, checksum, content_type, created_at.
 
 ### runners
 id, type, status, capabilities_json, labels_json, last_heartbeat_at, registered_at, disabled_at.
@@ -380,8 +380,8 @@ Exit: example job validates; ownership/state rules are documented; no secrets in
 ### Phase 1 — Local vertical slice
 - Cloudflare Worker API and D1 metadata.
 - D1 / Google Drive storage adapters.
-- Go VM poller/orchestrator.
-- Python local runner.
+- Python polling worker on Muse VM.
+- Python task execution environment.
 - Minimal UI for submit, list, detail, logs, and artifacts.
 
 Exit: submit Python job; VM claims and executes; artifact is visible; restart/failure are handled.
