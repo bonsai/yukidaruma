@@ -5,7 +5,13 @@
   "description": "Versioned job submission contract. Server-owned fields (job_id, state, timestamps, runner assignment) must not be trusted from clients. Credentials must never appear in job payloads.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "task", "runtime", "input", "output"],
+  "required": [
+    "schema_version",
+    "task",
+    "runtime",
+    "input",
+    "output"
+  ],
   "properties": {
     "schema_version": {
       "type": "string",
@@ -18,22 +24,36 @@
     },
     "task": {
       "type": "string",
-      "enum": ["python_script", "sql_query", "notebook", "analyze_dataset", "transform"],
+      "enum": [
+        "python_script",
+        "sql_query",
+        "notebook",
+        "analyze_dataset",
+        "transform"
+      ],
       "description": "High-level task type."
     },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["target", "language"],
+      "required": [
+        "target",
+        "language"
+      ],
       "properties": {
         "target": {
           "type": "string",
-          "enum": ["auto", "muse_vm", "colab", "kaggle", "local_duckdb"],
+          "enum": [
+            "auto",
+            "muse_vm",
+            "colab",
+            "kaggle"
+          ],
           "description": "Preferred execution target. 'auto' lets the orchestrator choose."
         },
         "language": {
           "type": "string",
-          "enum": ["python", "sql", "rust", "go"]
+          "const": "python"
         },
         "version": {
           "type": "string",
@@ -47,19 +67,36 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["uri", "format"],
+        "required": [
+          "uri",
+          "format"
+        ],
         "properties": {
-          "dataset_id": { "type": "string" },
+          "dataset_id": {
+            "type": "string"
+          },
           "uri": {
             "type": "string",
-            "description": "Object store URI, e.g. r2://datasets/example.parquet"
+            "description": "Storage reference: d1://dataset-row-id or gdrive://file-id."
           },
           "format": {
             "type": "string",
-            "enum": ["parquet", "csv", "jsonl", "json", "notebook", "tar.gz", "zip"]
+            "enum": [
+              "parquet",
+              "csv",
+              "jsonl",
+              "json",
+              "notebook",
+              "tar.gz",
+              "zip"
+            ]
           },
-          "version": { "type": "string" },
-          "checksum": { "type": "string" }
+          "version": {
+            "type": "string"
+          },
+          "checksum": {
+            "type": "string"
+          }
         }
       }
     },
@@ -69,7 +106,7 @@
       "properties": {
         "source_uri": {
           "type": "string",
-          "description": "URI of code bundle or notebook."
+          "description": "D1 or Google Drive reference to Python source/bundle."
         },
         "revision": {
           "type": "string",
@@ -90,12 +127,16 @@
       "additionalProperties": false,
       "properties": {
         "gpu": {
-          "type": ["boolean", "string"],
+          "type": [
+            "boolean",
+            "string"
+          ],
           "description": "true/false or 'optional' / 'required'"
         },
         "memory_mb": {
           "type": "integer",
-          "minimum": 256
+          "minimum": 256,
+          "maximum": 131072
         },
         "timeout_seconds": {
           "type": "integer",
@@ -111,11 +152,21 @@
     "output": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["prefix"],
+      "required": [
+        "prefix"
+      ],
       "properties": {
         "prefix": {
           "type": "string",
-          "description": "R2 (or other object store) prefix for artifacts, e.g. r2://artifacts/job-output/"
+          "description": "D1 dataset/result namespace or Google Drive folder reference.",
+          "default": "gdrive://folder-id"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "d1",
+            "google_drive"
+          ]
         }
       }
     },
@@ -127,7 +178,9 @@
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     }
   }
 }
