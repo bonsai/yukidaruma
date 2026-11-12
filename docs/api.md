@@ -1,12 +1,14 @@
 # Workers API specification (MVP)
 
-Related: #5, PRD §11, `docs/runner-protocol.md`
+Related: #5, PRD §11, `docs/runner-protocol.md`, `docs/storage-layout.md`
 
 Base path: `/v1`  
 Auth: `Authorization: Bearer <token>`  
 User tokens vs runner tokens are distinct scopes.
 
 All timestamps UTC ISO-8601. IDs opaque strings.
+
+**Storage:** dataset/artifact bytes live on **Google Drive**; D1 holds metadata and references (`drive_file_id` / `drive://file/{id}`).
 
 ## Conventions
 
@@ -31,7 +33,8 @@ All timestamps UTC ISO-8601. IDs opaque strings.
 {
   "name": "usage_logs",
   "description": "optional",
-  "uri": "r2://yukidaruma/datasets/ds_x/v1/data.parquet",
+  "uri": "drive://file/1abc…",
+  "drive_file_id": "1abc…",
   "format": "parquet",
   "size_bytes": 12345,
   "checksum": "sha256:…",
@@ -57,19 +60,20 @@ All timestamps UTC ISO-8601. IDs opaque strings.
 - Persist **before** 201 response
 - State starts as `queued`
 - Reject secrets in payload (best-effort heuristics)
+- `runtime.target`: `muse_vm` | `colab` | `kaggle` | `auto`
 
 ## Runs & artifacts
 
 | Method | Path | Scope | Description |
 |--------|------|-------|-------------|
 | GET | `/runs/{id}` | user | Run detail |
-| GET | `/runs/{id}/artifacts` | user | Artifact list |
-| POST | `/runs/{id}/events` | runner | Progress / state | 
+| GET | `/runs/{id}/artifacts` | user | Artifact list (Drive ids + names) |
+| POST | `/runs/{id}/events` | runner | Progress / state |
 | POST | `/runs/{id}/complete` | runner | Terminal + manifest |
 
 ### POST /runs/{id}/complete body
 
-Must validate against `schemas/result-manifest.schema.json` (or subset). Idempotent.
+Must validate against `schemas/result-manifest.schema.json` (or subset). Idempotent. Artifact URIs should be Drive-based.
 
 ## Runners
 
@@ -87,11 +91,11 @@ Request:
 {
   "runner_id": "muse-vm-1",
   "max_jobs": 1,
-  "capabilities": { "language": ["python"], "gpu": false }
+  "capabilities": { "language": ["python"], "targets": ["muse_vm"] }
 }
 ```
 
-Response 200 with job + attempt + temporary input/output access, or 204 if none.
+Response 200 with job + attempt + Drive input file ids / output folder id, or 204 if none.
 
 Claim must be atomic: one runner wins; creates `runs` row with `attempt`.
 
@@ -105,8 +109,12 @@ Claim must be atomic: one runner wins; creates `runs` row with `attempt`.
 
 Revoked tokens must fail subsequent calls.
 
+## UI note
+
+Browser client is **vanilla JS + SVG** consuming this API (no framework requirement).
+
 ## Implementation notes
 
 - Prefer D1 batch/transaction for claim + job state update
-- Never return storage secrets in JSON
-- Signed artifact URLs: short TTL query params only in dedicated download endpoints if needed
+- Never return Drive service-account keys in JSON
+- Prefer file IDs over brittle share URLs
