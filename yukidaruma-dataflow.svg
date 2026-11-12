@@ -28,7 +28,7 @@
 
   <!-- ======== Title ======== -->
   <text x="40" y="42" class="title">Yukidaruma — UI/UX &amp; Dataflow</text>
-  <text x="40" y="64" class="subtitle">Control plane (Cloudflare) + compute runners (Muse VM first, Colab / Kaggle best-effort) — Journey A: local analysis, looping</text>
+  <text x="40" y="64" class="subtitle">Control plane (Cloudflare) + compute runners (Muse VM / Colab / Kaggle Python) — Journey A: local analysis, looping</text>
 
   <!-- ======== Actors ======== -->
   <circle cx="95" cy="128" r="17" fill="#fff" stroke="#64748b" stroke-width="1.6"/>
@@ -70,12 +70,12 @@
   <path d="M566,238 a54,12 0 0,1 108,0 v44 a54,12 0 0,1 -108,0 z" fill="#fff" stroke="#64748b" stroke-width="1.4"/>
   <ellipse cx="620" cy="238" rx="54" ry="12" fill="#f1f5f9" stroke="#64748b" stroke-width="1.4"/>
   <text x="620" y="262" text-anchor="middle" class="name">D1</text>
-  <text x="620" y="279" text-anchor="middle" class="sub">metadata + job state</text>
+  <text x="620" y="279" text-anchor="middle" class="sub">metadata + small text</text>
 
-  <!-- R2 -->
+  <!-- Google Drive -->
   <path d="M742,232 h96 l14,14 v44 a6,6 0 0,1 -6,6 h-104 a6,6 0 0,1 -6,-6 v-52 a6,6 0 0,1 6,-6 z" fill="#fff" stroke="#64748b" stroke-width="1.4"/>
-  <text x="794" y="260" text-anchor="middle" class="name">R2</text>
-  <text x="794" y="277" text-anchor="middle" class="sub">datasets · artifacts</text>
+  <text x="794" y="260" text-anchor="middle" class="name">Google Drive</text>
+  <text x="794" y="277" text-anchor="middle" class="sub">large files · artifacts</text>
 
   <!-- job state chips -->
   <g>
@@ -94,7 +94,7 @@
   <text x="556" y="450" class="bandname">UBUNTU Muse VM — outbound only, no inbound port</text>
 
   <rect x="556" y="460" width="168" height="56" class="box"/>
-  <text x="640" y="483" text-anchor="middle" class="name">Go Orchestrator</text>
+  <text x="640" y="483" text-anchor="middle" class="name">Python Poller</text>
   <text x="640" y="500" text-anchor="middle" class="sub">poll · claim · heartbeat</text>
 
   <rect x="740" y="460" width="150" height="56" class="box"/>
@@ -102,7 +102,7 @@
   <text x="815" y="500" text-anchor="middle" class="sub">task execution</text>
 
   <rect x="640" y="524" width="170" height="0" fill="none"/>
-  <text x="815" y="536" text-anchor="middle" class="sub">↓ DuckDB / Polars — local analytics</text>
+  <text x="815" y="536" text-anchor="middle" class="sub">↓ Python task environment</text>
 
   <!-- Colab / Kaggle adapters -->
   <path d="M990,470 a26,18 0 0,1 24,-16 a30,20 0 0,1 44,-6 a24,17 0 0,1 30,22 a22,15 0 0,1 -14,26 h-72 a20,15 0 0,1 -12,-26 z" fill="#fff" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 4"/>
@@ -120,9 +120,9 @@
   <path id="p_persist" d="M650,180 C 640,200 632,214 626,224" class="edge"/>
   <!-- claim: Orchestrator -> API (poll, around the right side) -->
   <path id="p_claim" d="M724,474 H918 V150 H862" class="edge"/>
-  <!-- fetch inputs: R2 -> Runner -->
+  <!-- fetch inputs: Google Drive -> Runner -->
   <path id="p_fetch" d="M800,296 C 806,350 812,400 814,458" class="edge"/>
-  <!-- upload outputs: Runner -> R2 (offset return) -->
+  <!-- upload outputs: Runner -> Google Drive (offset return) -->
   <path id="p_upload" d="M838,458 C 842,400 838,350 824,298" class="edge"/>
   <!-- preview: API -> UI (status + artifact references) -->
   <path id="p_preview" d="M558,128 C 520,124 495,126 460,130" class="edge"/>
