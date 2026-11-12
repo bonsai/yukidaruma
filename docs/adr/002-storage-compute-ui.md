@@ -17,7 +17,7 @@ The user set hard constraints for Yukidaruma (2026-11-13):
 
 | Question | Choice |
 |---|---|
-| Storage | D1 for control plane. Datasets / manifests on **Google Drive** (the .metadata flow already lives there). R2 is optional (edge artifact cache), not the primary dataset location |
+| Storage | D1 for control plane. Datasets / manifests on **Google Drive** (the .metadata flow already lives there). **R2 is not used** (ADR-001 rewrite goes further: no R2 in the architecture) |
 | Compute | **Kaggle / Colab / Python env on Muse VM** — all three are first-class runner targets (Kaggle and Colab promoted from P1 adapters) |
 | UI | **Vanilla JavaScript + SVG only.** No frameworks, no bundler, no chart libraries — charts are hand-built SVG |
 
@@ -31,10 +31,10 @@ The user set hard constraints for Yukidaruma (2026-11-13):
 **Negative / constraints**
 - No framework conveniences (state management, charting) — more hand-rolled code
 - Google Drive is not addressable from Workers at runtime without an API layer — datasets on Drive are fetched by runners (VM / Kaggle / Colab), not by the edge API
-- R2's role shrinks to optional artifact caching
+- R2's role: **not used at all** (ADR-001 rewrite dropped it entirely; this ADR's "optional" wording is superseded)
 
 ## Relation to ADR-001
 
-- Object store row amended: R2 → optional; Google Drive primary for datasets
+- Object store row amended: R2 → **not used**; Google Drive primary for datasets
 - Frontend framework non-decision resolved: vanilla JS + SVG
 - Compute unchanged in principle, but Kaggle/Colab are promoted from "P1 best-effort adapters" to first-class targets
