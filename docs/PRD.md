@@ -115,6 +115,7 @@ Runner ID, type, capabilities, status, last heartbeat, labels, enable/disable, a
 | Muse worker | Polling, claim, heartbeat, launch and result reporting | Python on Ubuntu Muse VM |
 | Compute environments | Python task execution | Kaggle / Colab / Muse VM Python |
 | Analytics | Local tabular analysis where available | Python libraries; DuckDB optional |
+| Observability | Execution traces of job runs and LLM calls | Langfuse Cloud (see [tracing.md](tracing.md)) |
 
 ### Connectivity
 Prefer outbound polling:
@@ -136,6 +137,9 @@ Prefer outbound polling:
 
 ### SQL boundary
 D1 is not the analytical SQL engine. D1 stores control-plane records. DuckDB is the initial local analytical engine and can read Parquet, CSV, and JSONL from local or downloaded object-store files. A future remote SQL engine can be added behind an adapter.
+
+### Observability boundary
+Langfuse Cloud is the observability plane for execution traces (see §12 and [tracing.md](tracing.md)). Like D1, it stores neither datasets nor artifacts: job state and control-plane records live in D1, dataset content and outputs live in D1 (bounded text payloads) or Google Drive, and traces live in Langfuse. No one of the three replaces another, and D1 remains the authority for job state.
 
 ## 8. Functional requirements
 
@@ -356,6 +360,8 @@ All endpoints require authentication and validation. Runner endpoints require ru
 
 ### Observability
 Record request IDs, job IDs, run IDs, runner IDs, state changes, durations, and failure categories. Avoid storing prompts or sensitive dataset rows in operational logs by default.
+
+Execution tracing is provided by **Langfuse Cloud**: one job execution produces one trace covering its lifecycle stages and any LLM calls made inside the Python worker, in the same Langfuse project that receives the OpenRouter Traces destination. The full design — trace model, naming rules, metadata and tags, worker-owned instrumentation with the Langfuse Python SDK, configuration, data policy, and the acceptance audit loop — is specified in [tracing.md](tracing.md). Tracing is best-effort and metadata-only by default: it never stores dataset rows or prompt/response bodies unless explicitly enabled per task type, missing credentials disable it silently, and a tracing failure must never fail or block a job. D1 remains the authority for job state regardless of trace availability.
 
 ## 13. UX requirements
 

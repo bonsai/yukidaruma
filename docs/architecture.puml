@@ -12,6 +12,8 @@ component "Browser UI\nVanilla JS + SVG" as UI
 component "Cloudflare Workers\nControl-plane API" as API
 database "Cloudflare D1\nCatalog / jobs / runs / events\nSmall text payloads" as D1
 cloud "Google Drive\nLarger datasets / code / artifacts" as Drive
+cloud "OpenRouter\nLLM gateway" as OpenRouter
+cloud "Langfuse Cloud\nObservability - execution traces" as Langfuse
 
 package "Python compute environments" {
   node "Muse Ubuntu VM" as Muse {
@@ -34,6 +36,9 @@ Kaggle --> API : job status / result
 Kaggle --> Drive : input / output files
 Colab --> API : job status / result
 Colab --> Drive : input / output files
+Worker --> Langfuse : one trace per job execution\nlifecycle spans + LLM generations
+PyTask ..> OpenRouter : optional LLM calls via gateway
+OpenRouter --> Langfuse : Traces destination\nLLM calls made via OpenRouter
 
 note bottom of D1
   D1 is not an unlimited blob store
@@ -46,6 +51,12 @@ end note
 note bottom of Muse
   Outbound HTTPS only.
   No Go orchestrator or inbound listener.
+end note
+note bottom of Langfuse
+  Observability plane only (docs/tracing.md).
+  Metadata-only by default: no dataset rows,
+  no prompt/response bodies. D1 stays the
+  authority for job state.
 end note
 @enduml
 
@@ -126,6 +137,8 @@ node "Muse Ubuntu VM" {
 }
 cloud "Kaggle Python" as Kaggle
 cloud "Colab Python" as Colab
+cloud "OpenRouter" as OpenRouter
+cloud "Langfuse Cloud" as Langfuse
 Browser --> Workers : HTTPS
 Workers --> D1 : binding
 Workers --> Drive : OAuth / Drive API
@@ -136,6 +149,9 @@ Colab --> Workers : API / manual handoff
 Kaggle --> Drive : file access
 Colab --> Drive : file access
 MusePy --> Drive : scoped file access
+MuseWorker --> Langfuse : traces (outbound HTTPS)
+MusePy ..> OpenRouter : optional LLM calls
+OpenRouter --> Langfuse : Traces destination
 note bottom of Browser
   Vanilla JavaScript + SVG.
   No frontend framework.

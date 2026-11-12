@@ -182,6 +182,30 @@
       "items": {
         "type": "string"
       }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional Langfuse tracing intent (see docs/tracing.md). Submitter preferences only — credentials must never appear here; tracing configuration comes from the runner environment.",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workflow/session identifier grouping this job's trace with related jobs' traces. Omit for standalone jobs."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional trace tags, merged with the job's top-level tags and the derived task/runtime tags."
+        },
+        "trace_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Override for the root span name. Must follow the naming rules in docs/tracing.md (verb-first, stable, no dynamic values)."
+        }
+      }
     }
   }
 }
