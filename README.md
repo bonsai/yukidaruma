@@ -27,10 +27,10 @@ D1 is suitable for metadata and small text datasets; Google Drive is the file st
 | [Workers API](docs/api.md) | control-plane API |
 | [Python worker protocol](docs/runner-protocol.md) | claim, execute, heartbeat, result |
 
-## Implementation order
+## Growth plan
 
-#1 ADR → #2 Schema → #3 D1 → #4 Storage → #6 Python protocol → #5 Workers API → #7 Muse Python worker → #8 Python execution → #9 Vanilla JS/SVG UI → #10 E2E
+The product grows as one system: **POC → MVP → MAX**. See [the staged roadmap](docs/roadmap-poc-mvp-max.md) for scope, exit gates, acceptance criteria, and the mapping to Issues #1–#10.
 
-## Status
+## Current status
 
-Phase 0 design artifacts are aligned to the fixed storage, compute, and UI constraints.
+Architecture and contracts are documented. The next milestone is the POC vertical slice: one deterministic Python job, one Muse VM worker, D1 metadata/small text, and a private Google Drive artifact. Kaggle/Colab remain best-effort until verified.
