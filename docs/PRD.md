@@ -258,7 +258,7 @@ Illustrative version 1.0 payload:
       "input": [
         {
           "dataset_id": "ds_example",
-          "uri": "gdrive://file-id-or-d1://dataset-row-id",
+          "uri": "gdrive://example-file-id",
           "format": "parquet",
           "version": "v1"
         }
@@ -279,7 +279,7 @@ Illustrative version 1.0 payload:
       }
     }
 
-Server-owned fields such as job_id, timestamps, state, and runner assignment must not be trusted from clients. Credentials must never be embedded in job payloads.
+For D1-backed input, uri may instead be d1://dataset-row-id. Server-owned fields such as job_id, timestamps, state, and runner assignment must not be trusted from clients. Credentials must never be embedded in job payloads.
 
 ## 10. Core data entities
 
@@ -404,7 +404,7 @@ Exit: at least one remote adapter passes a documented end-to-end test, or remain
 
 ### Phase 4 — Hardening
 - Retry policies, quotas, retention, audit, and runner health.
-- Rust utility integration if justified.
+- Additional Python-native analytics packages only when justified.
 - Additional storage and compute adapters.
 
 ## 15. MVP acceptance checklist
