@@ -118,7 +118,7 @@ MVP outcome: a user can register one dataset, submit a local Python job, inspect
 | D1 unsuitable for large payloads or analytical scans | Size/performance limits | Keep D1 payloads small; use Google Drive for larger files and Python libraries for analysis |
 | Storage permissions misconfigured | Data exposure or failed runs | Scoped credentials, short-lived access, least privilege |
 | Runtime mismatch | Non-reproducible outputs | Capture environment, dependency lock, code revision, parameters |
-| Too many implementation languages | Maintenance burden | Start with Go and Python; add Rust only for measured bottlenecks |
+| Too many implementation languages | Maintenance burden | Keep user workloads in Python; Workers is the control-plane runtime |
 | Free compute is not guaranteed | Unpredictable completion time | Show availability and fallback/manual states |
 
 ## 11. Scope boundary
