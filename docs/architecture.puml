@@ -1,0 +1,196 @@
+' Yukidaruma — system architecture
+' Source of truth: docs/PRD.md
+' Render with PlantUML (each @startuml block is an independent diagram).
+
+@startuml yukidaruma_components
+title Yukidaruma — Control Plane and Compute Runners
+left to right direction
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+
+actor "Human user" as User
+actor "AI agent" as Agent
+
+package "Client layer" {
+  [Snowflake-inspired Web UI] as UI
+  [Agent / CLI client] as Client
+}
+package "Cloudflare edge — Control Plane" {
+  [Workers API
+Auth + validation + routing] as API
+  database "D1
+Metadata + job state" as D1
+  folder "R2
+Datasets + bundles + artifacts" as R2
+}
+package "Compute plane" {
+  node "Ubuntu Muse VM" as VM {
+    [Go Orchestrator
+Poll / claim / heartbeat / reconcile] as Orch
+    [Python Runner
+Task execution] as Runner
+    [DuckDB / Polars
+Local analytics] as Engine
+  }
+  cloud "Colab adapter" as Colab
+  cloud "Kaggle adapter" as Kaggle
+  component "Future runner adapters" as Future
+}
+cloud "External object stores
+(optional)" as External
+
+User --> UI
+Agent --> Client
+UI --> API : HTTPS + authenticated API
+Client --> API : HTTPS + authenticated API
+API --> D1 : metadata / transactions
+API --> R2 : object metadata / scoped access
+Orch --> API : outbound HTTPS polling
+claim + heartbeat + events
+Runner --> R2 : fetch inputs / upload outputs
+Runner --> Orch : local process result
+Orch --> D1 : via API only
+Runner --> Engine : execute SQL / analytics
+API --> Colab : adapter dispatch
+best-effort / manual fallback
+API --> Kaggle : adapter dispatch
+best-effort / manual fallback
+API --> Future
+Runner --> External : optional input/output
+note bottom of VM
+  No inbound VM port required for MVP.
+  The VM initiates outbound connections.
+end note
+note bottom of D1
+  Control-plane metadata only.
+  Never use D1 as the bulk analytical warehouse.
+end note
+@enduml
+
+@startuml yukidaruma_job_sequence
+title Yukidaruma — Local job execution sequence
+autonumber
+actor User
+participant "Web UI / Agent" as Client
+participant "Workers API" as API
+database "D1" as D1
+participant "R2" as R2
+participant "Go Orchestrator
+(Muse VM)" as Orch
+participant "Python Runner" as Runner
+participant "DuckDB / Polars" as Engine
+
+User -> Client : Submit job + inputs + constraints
+Client -> API : POST /v1/jobs
+API -> API : Authenticate + validate schema,
+permissions and resource limits
+API -> D1 : Persist job(state=queued)
+D1 --> API : job_id
+API --> Client : 202 Accepted + job_id
+
+loop Poll interval
+  Orch -> API : POST /v1/runners/claim
+  API -> D1 : Atomically claim eligible job
+  D1 --> API : job + attempt
+  API --> Orch : Claimed job or no work
+end
+
+Orch -> API : POST heartbeat / dispatched
+API -> D1 : Update run + append event
+Orch -> Runner : Start allowed task
+Runner -> R2 : Download input objects / code bundle
+R2 --> Runner : Input files
+Runner -> Engine : Execute analysis
+Engine --> Runner : Results
+Runner -> R2 : Upload logs + outputs + manifest
+R2 --> Runner : Object references
+Runner -> Orch : Exit status + manifest
+Orch -> API : POST run events / complete
+API -> D1 : Persist terminal state + artifacts metadata
+API --> Orch : Acknowledged
+Client -> API : GET job / runs / artifacts
+API -> D1 : Read metadata and event history
+D1 --> API : Job, run and artifact records
+API --> Client : Status + artifact references
+Client -> R2 : Fetch preview / download (scoped URL)
+R2 --> Client : Result data
+@enduml
+
+@startuml yukidaruma_job_state
+title Yukidaruma — Job and run lifecycle
+hide empty description
+[*] --> queued : submit validated job
+
+queued --> claimed : runner claims attempt
+claimed --> dispatched : runner accepts workload
+dispatched --> running : process starts
+running --> succeeded : exit=0 + manifest committed
+running --> failed : execution error
+running --> timed_out : deadline exceeded
+queued --> cancelled : cancel before claim
+claimed --> cancel_requested : cancel request
+dispatched --> cancel_requested : cancel request
+running --> cancel_requested : cancel request
+cancel_requested --> cancelled : runner confirms stop
+cancel_requested --> timed_out : stop deadline exceeded
+claimed --> failed : dispatch/lease failure
+dispatched --> failed : startup failure
+
+succeeded --> [*]
+failed --> [*]
+cancelled --> [*]
+timed_out --> [*]
+
+note right of claimed
+  A single runner owns one attempt.
+  Lease expiry is reconciled by the control plane.
+end note
+note right of failed
+  Retry creates a new run attempt;
+  it does not rewind a terminal run.
+end note
+@enduml
+
+@startuml yukidaruma_deployment
+title Yukidaruma — Deployment and trust boundaries
+skinparam componentStyle rectangle
+
+cloud "Public internet" {
+  node "User browser / agent" as Client
+  cloud "Cloudflare account" {
+    node "Workers" as Workers
+    database "D1" as D1
+    folder "R2" as R2
+  }
+}
+node "Private Ubuntu VM
+Muse environment" as VM {
+  component "Go Orchestrator" as Go
+  component "Python Runner" as Py
+  component "DuckDB" as Duck
+}
+cloud "Optional remote compute" {
+  node "Colab" as Colab
+  node "Kaggle" as Kaggle
+}
+
+Client --> Workers : HTTPS / authenticated
+Workers --> D1 : private binding
+Workers --> R2 : private binding / scoped URLs
+Go --> Workers : outbound HTTPS only
+Py --> R2 : scoped object access
+Py --> Duck
+Workers ..> Colab : optional adapter
+Workers ..> Kaggle : optional adapter
+
+note bottom of Workers
+  Validate every request.
+  Keep secrets in platform secret stores.
+  Audit actor, job, run and state transitions.
+end note
+note bottom of VM
+  Do not expose inbound listener in MVP.
+  Restrict task types, CPU/memory and timeout.
+  Treat datasets and code bundles as untrusted.
+end note
+@enduml
