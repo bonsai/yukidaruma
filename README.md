@@ -1,46 +1,36 @@
 # yukidaruma
 
-Snowflake-inspired **personal compute warehouse**: browse datasets, submit jobs, track runs, fetch artifacts.
+Snowflake-inspired **personal compute workspace**: register data, submit Python jobs, track runs, and inspect results.
 
-## Constraints
+## Fixed design constraints
 
-| Area | Rule |
-|------|------|
-| Storage | **D1** (metadata) and/or **Google Drive** (files) |
-| Compute | **Muse VM / Colab / Kaggle** Python environments |
-| UI | **Vanilla JS + SVG only** |
+- Storage: Cloudflare D1 or Google Drive. No R2.
+- Compute: Python environments on Kaggle, Colab, or the Muse Ubuntu VM.
+- UI: Vanilla JavaScript + SVG only. No frontend framework.
+- Control plane: Cloudflare Workers + D1.
+- Muse VM: Python worker polls the API; no Go orchestrator and no inbound VM port.
 
-## Architecture (MVP)
-
-- **Control plane:** Cloudflare Workers + D1
-- **Files:** Google Drive
-- **Orchestrator / local run:** Muse VM Python env
-- **Remote run:** Colab, Kaggle (best-effort)
-- **UI:** static vanilla JS + SVG
-
-Not a Snowflake clone. D1 is not the analytical engine.
+D1 is suitable for metadata and small text datasets; Google Drive is the file store for larger datasets and artifacts. The selected storage backend is explicit in each dataset/artifact reference.
 
 ## Docs
 
-| Doc | Issue |
-|-----|-------|
+| Doc | Purpose |
+|-----|---------|
 | [MRD](docs/MRD.md) | product context |
-| [PRD](docs/PRD.md) | requirements |
-| [ADR-001 MVP architecture](docs/adr/001-mvp-architecture.md) | #1 |
-| [Job schema](schemas/job.schema.json) | #2 |
-| [Result manifest schema](schemas/result-manifest.schema.json) | #2 |
-| [D1 schema](d1/schema.sql) / [D1 notes](d1/README.md) | #3 |
-| [Storage layout (D1 + Drive)](docs/storage-layout.md) | #4 |
-| [Workers API](docs/api.md) | #5 |
-| [Runner protocol & threat model](docs/runner-protocol.md) | #6 |
+| [PRD](docs/PRD.md) | requirements and constraints |
+| [ADR-001](docs/adr/001-mvp-architecture.md) | accepted MVP architecture |
+| [Architecture diagrams](docs/architecture.puml) | PlantUML diagrams |
+| [Storage model](docs/storage.md) | D1 / Google Drive storage rules |
+| [Job schema](schemas/job.schema.json) | job contract |
+| [Result manifest schema](schemas/result-manifest.schema.json) | result contract |
+| [D1 schema](d1/schema.sql) / [D1 notes](d1/README.md) | metadata and small text payloads |
+| [Workers API](docs/api.md) | control-plane API |
+| [Python worker protocol](docs/runner-protocol.md) | claim, execute, heartbeat, result |
 
 ## Implementation order
 
-```
-#1 ADR → #2 Schema → #3 D1 → #4 Storage → #6 Protocol → #5 Workers API
-    → #7 Orchestrator (Muse VM) → #8 Python Runner → #9 UI (vanilla JS) → #10 E2E
-```
+#1 ADR → #2 Schema → #3 D1 → #4 Storage → #6 Python protocol → #5 Workers API → #7 Muse Python worker → #8 Python execution → #9 Vanilla JS/SVG UI → #10 E2E
 
 ## Status
 
-Phase 0 design artifacts in-repo (constraints revised 2026-11-13). Runtime code not started.
+Phase 0 design artifacts are aligned to the fixed storage, compute, and UI constraints.
