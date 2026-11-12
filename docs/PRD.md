@@ -367,60 +367,35 @@ Record request IDs, job IDs, run IDs, runner IDs, state changes, durations, and 
 - Provide useful empty states and first actions.
 - Never imply a remote runtime is available merely because it is configured.
 
-## 14. Delivery plan
+## 14. Delivery plan — POC → MVP → MAX
 
-### Phase 0 — Contract and foundation
-- Define job and result manifest schemas.
-- Define D1 schema and state machine.
-- Define D1 vs Google Drive storage selection, references, and access flow.
-- Document runner protocol and threat model.
+The product is delivered as one evolving system, not three separate implementations. See [roadmap-poc-mvp-max.md](roadmap-poc-mvp-max.md) for detailed scope and exit gates.
 
-Exit: example job validates; ownership/state rules are documented; no secrets in fixtures.
+### POC — prove the vertical slice
+- One authenticated Workers/D1 path.
+- One Muse VM Python polling worker and one allowlisted deterministic task.
+- Prove bounded text read/write in D1 and larger private-file read/write in Google Drive.
+- Validate job/result contracts and one complete run lifecycle.
+- Use API/CLI or a diagnostic view; a polished UI is not required.
 
-### Phase 1 — Local vertical slice
-- Cloudflare Worker API and D1 metadata.
-- D1 / Google Drive storage adapters.
-- Python polling worker on Muse VM.
-- Python task execution environment.
-- Minimal UI for submit, list, detail, logs, and artifacts.
+Exit: a repeatable job submission → claim → Python execution → artifact persistence → result retrieval path, including restart/failure evidence.
 
-Exit: submit Python job; VM claims and executes; artifact is visible; restart/failure are handled.
+### MVP — dependable daily-use workspace
+- Full authenticated dataset/job/run/artifact API and minimal Vanilla JS + SVG workspace.
+- Reliable Muse VM runner with heartbeat, timeout, cancellation, retry-as-new-attempt, and restart recovery.
+- Dataset catalog, logs, artifact preview/download, and provenance.
+- Local DuckDB worksheet for CSV/JSONL/Parquet.
+- Automated CI tests across schema, D1, API, storage, runner, and UI.
 
-### Phase 2 — Analytics workspace
-- Dataset catalog and preview.
-- DuckDB SQL worksheet.
-- Query history and export.
-- Basic charts.
+Exit: a small trusted team can run and inspect real work without shell access or direct database edits.
 
-Exit: query registered data and save/reopen results.
+### MAX — capability and operations expansion
+- Verified Kaggle/Colab adapters and multiple Python workers with capability-aware routing.
+- Operational resilience, concurrency/quotas, audit/retention, and observability.
+- Richer analytics and reusable Python task packages.
+- Multi-user governance and performance targets defined from measured workloads.
 
-### Phase 3 — Remote compute
-- Kaggle adapter feasibility spike.
-- Colab adapter feasibility spike.
-- Manual handoff fallback and result ingestion.
-- Capability and availability reporting.
-
-Exit: at least one remote adapter passes a documented end-to-end test, or remains explicitly manual/unavailable.
-
-### Phase 4 — Hardening
-- Retry policies, quotas, retention, audit, and runner health.
-- Additional Python-native analytics packages only when justified.
-- Additional storage and compute adapters.
-
-## 15. MVP acceptance checklist
-
-- [ ] Authenticated user can open workspace.
-- [ ] User can register dataset URI and metadata.
-- [ ] User/API can submit a versioned job.
-- [ ] D1 records job before API acknowledgement.
-- [ ] Muse VM claims one job without duplicate ownership.
-- [ ] Python runner executes a deterministic task.
-- [ ] Runner writes small text outputs to D1 or uploads larger artifacts to Google Drive.
-- [ ] UI shows state, timestamps, logs, and artifact links.
-- [ ] Run records input references, code revision, parameters, and runtime.
-- [ ] VM restart does not lose queued jobs.
-- [ ] Secrets are absent from Git, job payloads, and logs.
-- [ ] Remote runners are best-effort and not required for MVP.
+Exit: each added capability meets an explicit SLO or acceptance target. More integrations alone do not constitute MAX.
 
 ## 16. Open decisions
 
