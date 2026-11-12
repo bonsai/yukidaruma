@@ -1,0 +1,8 @@
+model,tokens,cost_usd
+GPT,128,0.12
+Claude,96,0.09
+Gemini,74,0.05
+GPT,40,0.04
+Claude,22,0.02
+Gemini,30,0.02
+GPT,15,0.01
