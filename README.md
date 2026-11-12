@@ -24,6 +24,8 @@ python job.py -i sample.csv -o out.csv -s summary.json
 
 See [poc/README.md](poc/README.md).
 
+**Constraints (2026-11-13, ADR-002):** storage = D1 or Google Drive (R2 optional); compute = Kaggle / Colab / Python env on Muse VM; UI = vanilla JavaScript + SVG only (no frameworks, no chart libraries).
+
 ## Docs
 
 | Doc | Purpose |
