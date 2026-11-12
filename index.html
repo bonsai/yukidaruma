@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yukidaruma — UI/UX &amp; Dataflow</title>
+<style>
+  body { margin:0; font-family:'Segoe UI','Hiragino Kaku Gothic ProN',sans-serif; background:#f1f5f9; color:#0f172a; }
+  header { max-width:1240px; margin:0 auto; padding:28px 20px 6px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  header p { margin:0; color:#64748b; font-size:14px; }
+  main { max-width:1240px; margin:0 auto; padding:14px 20px 30px; }
+  .frame { background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:10px; box-shadow:0 6px 24px rgba(15,23,42,.06); }
+  .frame img { width:100%; height:auto; display:block; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin-top:16px; }
+  .card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:16px 18px; }
+  .card h2 { font-size:15px; margin:0 0 8px; }
+  .card p, .card li { font-size:13px; color:#475569; line-height:1.55; }
+  .card ol { margin:6px 0 0; padding-left:18px; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-bottom:8px; }
+  .a { background:#dbeafe; color:#1d4ed8; } .b { background:#ede9fe; color:#6d28d9; } .c { background:#e2e8f0; color:#475569; }
+  footer { max-width:1240px; margin:0 auto; padding:0 20px 28px; color:#94a3b8; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Yukidaruma — UI/UX &amp; Dataflow</h1>
+  <p>Animated SVG of the Yukidaruma system: who touches it (UI/UX) and how a job flows through it (dataflow). Source of truth: bonsai/yukidaruma — docs/PRD.md, docs/architecture.puml.</p>
+</header>
+<main>
+  <div class="frame"><img src="yukidaruma-dataflow.svg" alt="Yukidaruma animated dataflow diagram"></div>
+
+  <div class="cards">
+    <div class="card">
+      <span class="tag a">JOURNEY A</span>
+      <h2>First local analysis (animated)</h2>
+      <ol>
+        <li>Analyst registers a dataset and creates a Python job or SQL worksheet in the Web UI.</li>
+        <li>Workers API validates and persists the job in D1 as <b>queued</b>; UI gets <b>202 + job_id</b>.</li>
+        <li>The Muse VM orchestrator polls, claims the job, and the runner fetches inputs from R2.</li>
+        <li>DuckDB / Polars executes; logs, outputs and a manifest go back to R2.</li>
+        <li>Job state walks queued → claimed → dispatched → running → <b>succeeded</b>; UI previews results via scoped URLs.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <span class="tag b">JOURNEY B</span>
+      <h2>AI-agent delegation</h2>
+      <p>Agents use the <b>same authenticated API</b> as humans — no direct database access. Submit task + input references + constraints, receive a job_id, poll status (or receive an event), then read a structured result summary and artifact references.</p>
+    </div>
+    <div class="card">
+      <span class="tag c">JOURNEY C</span>
+      <h2>Remote notebook execution (later)</h2>
+      <p>Colab / Kaggle are <b>best-effort adapters</b>, added after the core job protocol is proven. An adapter is not shown as available until it passes an end-to-end test; a manual handoff is an acceptable first implementation. The VM never opens an inbound port — all VM traffic is outbound polling.</p>
+    </div>
+  </div>
+</main>
+<footer>Yukidaruma · animated SVG (SMIL + CSS, self-contained, loops) · 2026-11-12</footer>
+</body>
+</html>
